@@ -6,4 +6,5 @@ testresults/
 __pycache__
 .DS_Store
 scripts/obsolete
+.pyvenv/
 

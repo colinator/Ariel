@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ariel": {
+      "type": "http",
+      "url": "http://localhost:8750/mcp"
+    }
+  }
+}

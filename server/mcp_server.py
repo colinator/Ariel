@@ -767,6 +767,20 @@ async def save_module(name: str, code: str) -> dict:
             "summary": "Error: no code provided",
         }
 
+    try:
+        ast.parse(code, filename=f"{safe_name}.py")
+    except SyntaxError as exc:
+        location = f"line {exc.lineno}"
+        if exc.offset is not None:
+            location += f", column {exc.offset}"
+        detail = exc.msg or "invalid syntax"
+        error = f"syntax error in module code at {location}: {detail}"
+        return {
+            "ok": False,
+            "error": error,
+            "summary": f"Error: {error}",
+        }
+
     MODULES_DIR.mkdir(exist_ok=True)
     filepath = MODULES_DIR / f"{safe_name}.py"
 
@@ -785,15 +799,45 @@ async def save_module(name: str, code: str) -> dict:
         silent=True,
     )
 
-    reloaded = False
-    if existed:
-        # Reload in case it was already imported
-        await repl.send_code(
-            f"import importlib, sys\n"
-            f"if {safe_name!r} in sys.modules: importlib.reload(sys.modules[{safe_name!r}])",
-            silent=True,
-        )
-        reloaded = True
+    import_response = await repl.send_code(
+        f"import importlib, sys, traceback\n"
+        f"importlib.invalidate_caches()\n"
+        f"try:\n"
+        f"    if {safe_name!r} in sys.modules:\n"
+        f"        importlib.reload(sys.modules[{safe_name!r}])\n"
+        f"        print('__module_action__:reloaded')\n"
+        f"    else:\n"
+        f"        importlib.import_module({safe_name!r})\n"
+        f"        print('__module_action__:imported')\n"
+        f"except Exception:\n"
+        f"    print('__module_action__:error')\n"
+        f"    traceback.print_exc()\n",
+        silent=True,
+    )
+    import_stdout = import_response.get("stdout", "")
+    import_stderr = import_response.get("stderr", "")
+    import_action = "created"
+    if "__module_action__:reloaded" in import_stdout:
+        import_action = "reloaded"
+    elif "__module_action__:imported" in import_stdout:
+        import_action = "imported"
+    elif "__module_action__:error" in import_stdout:
+        import_action = "error"
+
+    import_stdout = (
+        import_stdout
+        .replace("__module_action__:reloaded\n", "")
+        .replace("__module_action__:imported\n", "")
+        .replace("__module_action__:error\n", "")
+        .replace("__module_action__:reloaded", "")
+        .replace("__module_action__:imported", "")
+        .replace("__module_action__:error", "")
+        .strip()
+    )
+
+    import_error = "\n".join(part for part in (import_stdout, import_stderr.strip()) if part).strip()
+    imported = import_action == "imported"
+    reloaded = import_action == "reloaded"
 
     action = "overwrote" if existed else "created"
     summary = (
@@ -801,11 +845,15 @@ async def save_module(name: str, code: str) -> dict:
         f"(was {old_lines} lines, now {new_lines} lines, {file_bytes} bytes). "
         f"Import with: from {safe_name} import ..."
     )
-    if reloaded:
+    if imported:
+        summary += " Imported successfully in the REPL."
+    elif reloaded:
         summary += " Reloaded existing import."
+    elif import_error:
+        summary += f" Import check failed: {import_error.splitlines()[-1]}"
 
     return {
-        "ok": True,
+        "ok": not bool(import_error),
         "name": safe_name,
         "path": str(filepath),
         "action": action,
@@ -814,7 +862,9 @@ async def save_module(name: str, code: str) -> dict:
         "old_lines": old_lines,
         "new_lines": new_lines,
         "bytes": file_bytes,
+        "imported": imported,
         "reloaded": reloaded,
+        **({"import_error": import_error} if import_error else {}),
         "import_hint": f"from {safe_name} import ...",
         "summary": summary,
     }
