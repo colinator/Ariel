@@ -1,0 +1,11 @@
+numpy>=2
+roboflex
+roboflex-webcam_gst
+roboflex_transport_zmq
+roboflex_dynamixel
+Pillow
+matplotlib
+opencv-python-headless
+mcp
+fastapi
+uvicorn

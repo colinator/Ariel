@@ -1,0 +1,9 @@
+image_cache/
+logs/
+blog/
+modules/
+testresults/
+__pycache__
+.DS_Store
+scripts/obsolete
+

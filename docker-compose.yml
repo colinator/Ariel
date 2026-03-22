@@ -1,0 +1,83 @@
+services:
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ariel:local
+    command: ["python", "-m", "server.mcp_server"]
+    ports:
+      - "8750:8750"
+      # Command channel: host hardware subscriber -> container MCP publisher
+      - "5558:5558"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      # How camera images are returned over MCP: inline, file, html, inline+file, inline+html
+      - ARIEL_IMAGE_RETURN_MODE=file
+      # Map container paths under /app to client-visible host paths for file image mode.
+      - ARIEL_SERVER_ROOT=/app
+      - ARIEL_CLIENT_ROOT=/Users/colinprepscius/code/ariel
+      # Camera/state streams are published by host-side hardware process.
+      - ROBOFLEX_ZMQ_CAMERA_CONNECT=tcp://host.docker.internal:5555
+      - ROBOFLEX_ZMQ_MOTOR_STATE_CONNECT=tcp://host.docker.internal:5556
+      # MCP publishes motor commands on this endpoint; host hardware subscribes.
+      - ROBOFLEX_ZMQ_MOTOR_CMD_BIND=tcp://0.0.0.0:5558
+      # Export REPL log to host-mounted ./logs for easy tailing.
+      - ARIEL_REPL_LOG=/logs/ariel_repl.log
+      # Writable matplotlib config dir (container filesystem is read-only).
+      - MPLCONFIGDIR=/var/tmp/matplotlib
+    volumes:
+      # Persistent user-created modules from save_module() — bind-mounted for host visibility
+      - ./modules:/app/modules
+      # Cached images from snapshot/execute — served over HTTP and visible on host
+      - ./image_cache:/app/image_cache
+      # Persistent venv so pip installs survive container restarts.
+      # After rebuilding the image, remove this volume to pick up new packages:
+      #   docker volume rm ariel_venv_data
+      - venv_data:/app/.venv
+      # Host-visible REPL logs.
+      - ./logs:/logs
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /run
+      - /var/tmp
+      - /home/appuser/.cache
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.0
+
+  hardware:
+    # Optional: only start when requested, e.g.
+    # docker compose --profile hardware up -d
+    profiles: ["hardware"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ariel:local
+    command: ["python", "-m", "robots.pantilt.hardware"]
+    # Linux-only device passthrough. Override paths via env vars if needed.
+    devices:
+      - "${ROBOFLEX_CAMERA_DEVICE:-/dev/video0}:${ROBOFLEX_CAMERA_DEVICE:-/dev/video0}"
+      - "${ROBOFLEX_MOTOR_DEVICE:-/dev/ttyUSB0}:${ROBOFLEX_MOTOR_DEVICE:-/dev/ttyUSB0}"
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /run
+      - /var/tmp
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.0
+    # Hardware process uses local IPC files only; no network needed.
+    network_mode: "none"
+
+volumes:
+  venv_data:
