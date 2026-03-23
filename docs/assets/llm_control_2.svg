@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 220" font-family="Inter, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="7" markerHeight="5" refX="6.5" refY="2.5" orient="auto">
+      <path d="M0,0 L7,2.5 L0,5 Z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect width="1080" height="220" fill="#fafafa" rx="16"/>
+
+  <!-- LLM -->
+  <g transform="translate(32, 58)">
+    <text x="67.5" y="62" text-anchor="middle" font-size="36" font-weight="700" fill="#1d4ed8">LLM</text>
+  </g>
+
+  <!-- Arrow 1 -->
+  <line x1="167" y1="111" x2="212" y2="111" stroke="#475569" stroke-width="2.5" stroke-dasharray="6,5" marker-end="url(#arrow)"/>
+
+  <!-- MCP Server -->
+  <g transform="translate(212, 58)">
+    <rect x="0" y="0" width="190" height="106" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+    <text x="95" y="34" text-anchor="middle" font-size="22" font-weight="700" fill="#0f172a">MCP Server</text>
+    <text x="95" y="61" text-anchor="middle" font-size="15" fill="#334155">describe()</text>
+    <text x="95" y="82" text-anchor="middle" font-size="15" fill="#334155">execute(code)</text>
+    <text x="95" y="100" text-anchor="middle" font-size="18" fill="#94a3b8">...</text>
+  </g>
+
+  <!-- Arrow 2 -->
+  <line x1="402" y1="111" x2="446" y2="111" stroke="#475569" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- REPL -->
+  <g transform="translate(446, 58)">
+    <rect x="0" y="0" width="240" height="106" rx="12" fill="#111827" stroke="#7c3aed" stroke-width="2"/>
+    <circle cx="18" cy="18" r="3.5" fill="#f87171"/>
+    <circle cx="30" cy="18" r="3.5" fill="#fbbf24"/>
+    <circle cx="42" cy="18" r="3.5" fill="#34d399"/>
+    <text x="18" y="62" font-size="17" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#c4b5fd">&gt;&gt;&gt; robot.whatever()</text>
+  </g>
+
+  <!-- Arrow 3 -->
+  <line x1="686" y1="111" x2="730" y2="111" stroke="#475569" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- RobotProxy -->
+  <g transform="translate(730, 58)">
+    <rect x="0" y="0" width="140" height="106" rx="12" fill="#ecfeff" stroke="#0891b2" stroke-width="2"/>
+    <text x="70" y="60" text-anchor="middle" font-size="19" font-weight="700" fill="#0f766e">Robot proxy</text>
+  </g>
+
+  <!-- Arrow 4 -->
+  <line x1="870" y1="111" x2="914" y2="111" stroke="#475569" stroke-width="2.5" stroke-dasharray="6,5" marker-end="url(#arrow)"/>
+
+  <!-- Hardware Robot -->
+  <g transform="translate(914, 58)">
+    <rect x="23" y="72" width="56" height="11" rx="4" fill="#94a3b8" stroke="#64748b" stroke-width="1.3"/>
+    <rect x="46" y="47" width="11" height="26" rx="3" fill="#cbd5e1" stroke="#64748b" stroke-width="1.3" transform="rotate(-16, 51.5, 78)"/>
+    <circle cx="51.5" cy="47" r="4.8" fill="#f8fafc" stroke="#64748b" stroke-width="1.3"/>
+    <rect x="46" y="23" width="11" height="26" rx="3" fill="#cbd5e1" stroke="#64748b" stroke-width="1.3" transform="rotate(18, 51.5, 47)"/>
+    <circle cx="58" cy="23.5" r="4.2" fill="#f8fafc" stroke="#64748b" stroke-width="1.3"/>
+    <rect x="55" y="15" width="15" height="11" rx="3" fill="#1e293b" stroke="#0f172a" stroke-width="1"/>
+    <circle cx="62.5" cy="20.5" r="3" fill="#334155"/>
+    <circle cx="62.5" cy="20.5" r="1.5" fill="#60a5fa"/>
+  </g>
+</svg>

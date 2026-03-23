@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 670" font-family="Menlo, Monaco, 'Courier New', monospace" font-size="12">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="none" stroke="#666" stroke-width="1.2"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="none" stroke="#3a8a3a" stroke-width="1.2"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="670" fill="#ffffff" rx="8"/>
+
+  <!-- Title -->
+  <text x="450" y="32" text-anchor="middle" fill="#222" font-size="18" font-weight="bold">Ariel</text>
+
+  <!-- ==================== LLM ==================== -->
+  <rect x="250" y="52" width="400" height="40" rx="20" fill="#f0ecfa" stroke="#7b4fbf" stroke-width="2" stroke-dasharray="6,3"/>
+  <text x="450" y="78" text-anchor="middle" fill="#6a3aaf" font-size="14" font-weight="bold">LLM  (Claude / Codex / etc)</text>
+
+  <!-- Arrow: LLM → MCP -->
+  <line x1="450" y1="92" x2="450" y2="158" stroke="#7b4fbf" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+  <text x="462" y="130" fill="#7b4fbf" font-size="9">Streamable HTTP</text>
+
+  <!-- ==================== DOCKER CONTAINER boundary ==================== -->
+  <rect x="100" y="138" width="700" height="390" rx="8" fill="none" stroke="#2a7fff" stroke-width="2.5" stroke-dasharray="10,5"/>
+  <rect x="110" y="131" width="170" height="18" rx="4" fill="#2a7fff"/>
+  <text x="190" y="144" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">Container (Docker et al)</text>
+
+  <!-- ==================== MCP Server ==================== -->
+  <rect x="130" y="158" width="640" height="110" rx="6" fill="#e8eaf5" stroke="#4a5a9a" stroke-width="1.5"/>
+  <text x="450" y="180" text-anchor="middle" fill="#3a4a8a" font-size="12" font-weight="bold">MCP Server</text>
+
+  <!-- Tool row 1 -->
+  <rect x="150" y="192" width="88" height="24" rx="4" fill="#d8daf0" stroke="#5a6aaa" stroke-width="0.8"/>
+  <text x="194" y="208" text-anchor="middle" fill="#3a4a8a" font-size="9">health()</text>
+
+  <rect x="244" y="192" width="98" height="24" rx="4" fill="#d8daf0" stroke="#5a6aaa" stroke-width="0.8"/>
+  <text x="293" y="208" text-anchor="middle" fill="#3a4a8a" font-size="9">describe()</text>
+
+  <rect x="348" y="192" width="108" height="24" rx="4" fill="#d8daf0" stroke="#5a6aaa" stroke-width="0.8"/>
+  <text x="402" y="208" text-anchor="middle" fill="#3a4a8a" font-size="9">execute(code)</text>
+
+  <rect x="462" y="192" width="108" height="24" rx="4" fill="#d8daf0" stroke="#5a6aaa" stroke-width="0.8"/>
+  <text x="516" y="208" text-anchor="middle" fill="#3a4a8a" font-size="9">snapshot(device)</text>
+
+  <rect x="576" y="192" width="88" height="24" rx="4" fill="#d8daf0" stroke="#5a6aaa" stroke-width="0.8"/>
+  <text x="620" y="208" text-anchor="middle" fill="#3a4a8a" font-size="9">shell(command)</text>
+
+  <!-- Tool row 2 -->
+  <rect x="150" y="222" width="140" height="24" rx="4" fill="#d8daf0" stroke="#5a6aaa" stroke-width="0.8"/>
+  <text x="220" y="238" text-anchor="middle" fill="#3a4a8a" font-size="9">save_module(name, code)</text>
+
+  <rect x="296" y="222" width="110" height="24" rx="4" fill="#d8daf0" stroke="#5a6aaa" stroke-width="0.8"/>
+  <text x="351" y="238" text-anchor="middle" fill="#3a4a8a" font-size="9">list_modules()</text>
+
+  <rect x="412" y="222" width="125" height="24" rx="4" fill="#d8daf0" stroke="#5a6aaa" stroke-width="0.8"/>
+  <text x="475" y="238" text-anchor="middle" fill="#3a4a8a" font-size="9">read_module(name)</text>
+
+  <!-- Arrow: MCP → REPL -->
+  <line x1="450" y1="268" x2="450" y2="298" stroke="#c07000" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="462" y="288" fill="#c07000" font-size="9">stdio  (len-prefixed JSON)</text>
+
+  <!-- ==================== REPL Subprocess ==================== -->
+  <rect x="130" y="298" width="640" height="218" rx="6" fill="#eaf5ea" stroke="#3a8a3a" stroke-width="1.5"/>
+  <text x="450" y="320" text-anchor="middle" fill="#2a7a2a" font-size="12" font-weight="bold">REPL Subprocess</text>
+
+  <!-- ===== Terminal illustration (left side) ===== -->
+  <!-- Terminal outer frame -->
+  <rect x="155" y="332" width="258" height="138" rx="6" fill="#1e1e1e" stroke="#555" stroke-width="1.2"/>
+  <!-- Title bar -->
+  <rect x="155" y="332" width="258" height="22" rx="6" fill="#3a3a3a"/>
+  <rect x="155" y="348" width="258" height="6" fill="#3a3a3a"/>
+  <!-- Title bar text -->
+  <text x="270" y="347" text-anchor="middle" fill="#999" font-size="8">python3</text>
+  <!-- Terminal content -->
+  <text x="165" y="372" fill="#6adf6a" font-size="9">&gt;&gt;&gt;</text>
+  <text x="195" y="372" fill="#e0e0e0" font-size="9">robot.devices()</text>
+  <text x="165" y="388" fill="#aaa" font-size="8"># Robot: Pan/Tilt Camera Mount</text>
+  <text x="165" y="406" fill="#6adf6a" font-size="9">&gt;&gt;&gt;</text>
+  <text x="195" y="406" fill="#e0e0e0" font-size="9">robot.snapshot("main")</text>
+  <text x="165" y="422" fill="#aaa" font-size="8">&lt;640x480 RGB frame&gt;</text>
+  <text x="165" y="440" fill="#6adf6a" font-size="9">&gt;&gt;&gt;</text>
+  <text x="195" y="440" fill="#e0e0e0" font-size="9">robot.set_positions(pan=2200, tilt=3267)</text>
+  <text x="165" y="456" fill="#aaa" font-size="8">{'pan': 2200, 'tilt': 3267}</text>
+
+  <!-- Arrow: Terminal → PanTiltRobotProxy -->
+  <line x1="413" y1="430" x2="450" y2="430" stroke="#3a8a3a" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+  <text x="424" y="423" fill="#3a8a3a" font-size="8">robot</text>
+
+  <!-- ===== Class hierarchy (right side) ===== -->
+  <!-- UML: RobotBase class box -->
+  <rect x="460" y="340" width="240" height="52" rx="0" fill="#ddf0dd" stroke="#3a8a3a" stroke-width="1"/>
+  <text x="580" y="358" text-anchor="middle" fill="#2a6a2a" font-size="11" font-weight="bold" font-style="italic">RobotBase  «ABC»</text>
+  <line x1="460" y1="364" x2="700" y2="364" stroke="#3a8a3a" stroke-width="0.8"/>
+  <text x="470" y="380" fill="#3a7a3a" font-size="9">devices()  describe()  snapshot()</text>
+
+  <!-- UML inheritance arrow (open triangle pointing up at RobotBase) -->
+  <line x1="580" y1="392" x2="580" y2="414" stroke="#3a8a3a" stroke-width="1.2"/>
+  <polygon points="574,404 580,392 586,404" fill="#eaf5ea" stroke="#3a8a3a" stroke-width="1.2"/>
+
+  <!-- UML: PanTiltRobot class box -->
+  <rect x="460" y="414" width="240" height="88" rx="0" fill="#ddf0dd" stroke="#3a8a3a" stroke-width="1"/>
+  <text x="580" y="432" text-anchor="middle" fill="#2a6a2a" font-size="11" font-weight="bold">PanTiltRobotProxy</text>
+  <line x1="460" y1="438" x2="700" y2="438" stroke="#3a8a3a" stroke-width="0.8"/>
+  <text x="470" y="452" fill="#3a7a3a" font-size="9">cameras['main'].grab_frame()</text>
+  <text x="470" y="466" fill="#3a7a3a" font-size="9">motors['pan'/'tilt'].*</text>
+  <text x="470" y="480" fill="#3a7a3a" font-size="9">set_positions(pan=..., tilt=...)</text>
+  <text x="470" y="494" fill="#3a7a3a" font-size="9">run(), start_task(), logging, snapshot()</text>
+
+  <!-- Arrow: PanTiltRobotProxy → Hardware -->
+  <line x1="580" y1="502" x2="580" y2="558" stroke="#2a6cb6" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="592" y="540" fill="#2a6cb6" font-size="9">ZMQ tcp://</text>
+
+  <!-- ==================== Hardware Server ==================== -->
+  <rect x="130" y="558" width="640" height="95" rx="6" fill="#fae8e6" stroke="#c0392b" stroke-width="1.5"/>
+  <text x="450" y="580" text-anchor="middle" fill="#a02a1a" font-size="12" font-weight="bold">PanTiltRobot (actual hardware)</text>
+  <text x="450" y="596" text-anchor="middle" fill="#b05a4a" font-size="10">immortal process, owns all hardware</text>
+
+  <!-- Camera pipeline -->
+  <rect x="150" y="608" width="260" height="30" rx="4" fill="#f5ddd8" stroke="#b06a5a" stroke-width="0.8"/>
+  <text x="280" y="628" text-anchor="middle" fill="#8a3020" font-size="10">WebcamSensor  →  ZMQ Pub</text>
+
+  <!-- Motor pipeline -->
+  <rect x="430" y="608" width="320" height="30" rx="4" fill="#f5ddd8" stroke="#b06a5a" stroke-width="0.8"/>
+  <text x="590" y="628" text-anchor="middle" fill="#8a3020" font-size="10">ZMQ Sub  →  DynamixelGroupNode  →  ZMQ Pub</text>
+</svg>
