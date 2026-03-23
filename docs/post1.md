@@ -46,9 +46,10 @@ At the top level, there are three pieces:
 
 That `robot` object is the bridge to the actual hardware. In this case, it sends commands and receives state over zmq/tcp to a separate hardware process running on the host. The same basic pattern could sit on top of ROS or any other robotics middleware just as well.
 
-So the model is not choosing from a fixed menu of robot commands. It is writing Python against a live robot object, running that code, inspecting the result, and revising it. It can define helpers, build up state, save modules, install dependencies, and in general use the robot the way a human developer would use a REPL.
+I run the MCP server and REPL subprocess inside a Docker container for damage control, while joint limits are still enforced on the hardware side. Hardware connection was run outside of docker, but that's a quirk of docker on mac os.
 
-I run the MCP server and REPL subprocess inside a Docker container for damage control, while joint limits are still enforced on the hardware side.
+The LLM is writing Python against a live robot object, running that code, inspecting the result, and revising it. It can define helpers, build up state, save modules, install dependencies, and in general use the robot the way a human developer would use a REPL.
+
 
 <p align="center">
 <img src="assets/architecture.svg" alt="Architecture" width="700px" />
@@ -104,9 +105,7 @@ def track_hand_step(robot):
         )
 ```
 
-The REPL is already clearly useful. The model is not just emitting one static answer; it is using the REPL as a live programming environment, checking the hardware, writing code, running it, and then refining or reusing what it just wrote. It appeared that the LLMs would one-shot the solution, but closer inspection revealed that even in a single user prompt request, they perform multiple reasoning steps, and interact repeatedly with the REPL. If anything, it shows that the loop between model, code, and robot is already tight enough to be genuinely productive.
-
-Even on a toy robot, the model is not merely issuing high-level commands. It is inspecting the world, writing little local policies, and running them against real hardware.
+The REPL is already clearly useful. The model is not just emitting one static answer; it is using the REPL as a live programming environment, checking the hardware, writing code, running it, and then refining or reusing what it just wrote. It appeared that the LLMs would one-shot the solution, but closer inspection revealed that even in a single user prompt request, they perform multiple reasoning steps and interact repeatedly with the REPL. If anything, it shows that the loop between model, code, and robot is already tight enough to be genuinely productive.
 
 ## Concerns
 
