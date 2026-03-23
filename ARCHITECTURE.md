@@ -37,7 +37,7 @@ Ariel avoids these by separating concerns:
 
 ### 1. Hardware Server
 
-[`robots/pantilt/hardware.py`](/Users/colinprepscius/code/Ariel/robots/pantilt/hardware.py)
+[`robots/pantilt/hardware.py`](robots/pantilt/hardware.py)
 
 This process owns the physical hardware. For the current robot, that means:
 
@@ -52,7 +52,7 @@ robot deployment framework.
 
 ### 2. MCP Server
 
-[`server/mcp_server.py`](/Users/colinprepscius/code/Ariel/server/mcp_server.py)
+[`server/mcp_server.py`](server/mcp_server.py)
 
 This process exposes the system to an LLM client over MCP. It is responsible for:
 
@@ -65,7 +65,7 @@ This layer is mostly robot-agnostic.
 
 ### 3. REPL Subprocess
 
-[`server/repl_server.py`](/Users/colinprepscius/code/Ariel/server/repl_server.py)
+[`server/repl_server.py`](server/repl_server.py)
 
 This process hosts a persistent Python session with a preloaded `robot` object.
 Model-authored code runs here.
@@ -116,10 +116,10 @@ where possible. For example, motor commands are clamped before they are sent to 
 
 The runtime is split between generic infrastructure and robot-specific implementation:
 
-- [`server/robot_base.py`](/Users/colinprepscius/code/Ariel/server/robot_base.py) defines the base contract
-- [`server/robot_loader.py`](/Users/colinprepscius/code/Ariel/server/robot_loader.py) loads the configured robot implementation
-- [`robot.conf`](/Users/colinprepscius/code/Ariel/robot.conf) names the active robot class
-- [`robots/pantilt/robot.py`](/Users/colinprepscius/code/Ariel/robots/pantilt/robot.py) implements the current robot proxy
+- [`server/robot_base.py`](server/robot_base.py) defines the base contract
+- [`server/robot_loader.py`](server/robot_loader.py) loads the configured robot implementation
+- [`robot.conf`](robot.conf) names the active robot class
+- [`robots/pantilt/robot.py`](robots/pantilt/robot.py) implements the current robot proxy
 
 That means the overall runtime can support other robots later, but this repository should still be
 read honestly: the current hardware code is for one pan/tilt robot, not for arbitrary robots.
