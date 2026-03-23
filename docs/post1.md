@@ -117,3 +117,5 @@ This approach obviously brings safety, security and alignment concerns. After al
 This robot is trivial, admittedly. I award AI a white belt in robot-fu so far. Need a bigger robot.
 
 *Limitations:* The biggest technical limitation seems to be MCP handling by harnesses, which can be painful. None seem to deal well with MCP restarts. Codex will sometimes truncate responses over some length, and Claude often refuses to run ImageContent through its image understanding mode (and in fact entirely hallucinates results). Gemini, for all its faults, seems to handle MCP well.
+
+*Colin Prepscius, March 22, 2026*
