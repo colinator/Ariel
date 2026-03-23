@@ -16,7 +16,7 @@ services:
       - ARIEL_IMAGE_RETURN_MODE=file
       # Map container paths under /app to client-visible host paths for file image mode.
       - ARIEL_SERVER_ROOT=/app
-      - ARIEL_CLIENT_ROOT=/Users/colinprepscius/code/Ariel
+      - ARIEL_CLIENT_ROOT=${PWD}
       # Camera/state streams are published by host-side hardware process.
       - ROBOFLEX_ZMQ_CAMERA_CONNECT=tcp://host.docker.internal:5555
       - ROBOFLEX_ZMQ_MOTOR_STATE_CONNECT=tcp://host.docker.internal:5556
