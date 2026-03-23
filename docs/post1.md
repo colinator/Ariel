@@ -27,7 +27,7 @@ In this conception, the LLM is the programmer, operating in-situ on a real robot
 The LLM might query cameras or sensors, and then execute a series of robot/joint commands that it creates with a `for` loop in a program against a robot proxy. It can repeat this at will - an LLM in a closed loop. It can also author local closed-loop programs that react in real-time to the environment - after all, it can write programs that use pytorch, segment camera images, process tactile data, and run their own little policies.
 
 <p align="center">
-<img src="assets/llm_control.svg" alt="LLM Control" width="600px" />
+<img src="assets/llm_control.svg" alt="LLM Control" width="700px" />
 </p>
 
 ## How
@@ -41,7 +41,7 @@ At the top level, there are three pieces:
 - a robot proxy injected into that REPL as `robot`
 
 <p align="center">
-<img src="assets/llm_control_2.svg" alt="LLM Control" width="600px" />
+<img src="assets/llm_control_2.svg" alt="LLM Control" width="700px" />
 </p>
 
 That `robot` object is the bridge to the actual hardware. In this case, it sends commands and receives state over zmq/tcp to a separate hardware process running on the host. The same basic pattern could sit on top of ROS or any other robotics middleware just as well.
@@ -51,7 +51,7 @@ So the model is not choosing from a fixed menu of robot commands. It is writing 
 I run the MCP server and REPL subprocess inside a Docker container for damage control, while joint limits are still enforced on the hardware side.
 
 <p align="center">
-<img src="assets/architecture.svg" alt="Architecture" width="533px" />
+<img src="assets/architecture.svg" alt="Architecture" width="700px" />
 </p>
 
 I used an extremely simple robot: just a couple of dynamixel motors arranged in a pan-tilt configuration, holding a usb camera.
