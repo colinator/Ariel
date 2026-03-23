@@ -108,6 +108,10 @@ That object gives the model a structured surface for:
 The important property is that safety and hardware conventions live below the LLM-authored code
 where possible. For example, motor commands are clamped before they are sent to the actual motors.
 
+<p align="center">
+  <img src="docs/repl_to_robot.svg" alt="REPL to robot injection and proxy pattern" width="80%" />
+</p>
+
 ## Robot-Agnostic Structure
 
 The runtime is split between generic infrastructure and robot-specific implementation:

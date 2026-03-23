@@ -21,9 +21,9 @@ Ariel is a reference implementation of that idea using:
 - a persistent Python REPL with a preloaded `robot` object
 - an MCP server exposing that environment to an LLM client
 
-For the deeper design rationale, see [ARCHITECTURE.md](/Users/colinprepscius/code/Ariel/ARCHITECTURE.md).
+For the deeper design rationale, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
-<img src="architecture.svg" alt="Ariel Architecture" width="80%" />
+<img src="architecture.svg" alt="Ariel Architecture" width="70%" />
 
 ## Why This Approach
 
@@ -71,6 +71,9 @@ This codebase currently targets one specific robot:
 
 The current `PanTiltRobot` is intentionally minimal. It does not contain built-in behaviors, task logic, navigation, grasping, detection pipelines, or any higher-level notion of what the robot is "for". It just exposes direct access to sensors and actuators through a simple `robot` object, and a `description` of what it is.
 
+<p align="center">
+  <img src="docs/pan_tilt_robot_proxy.svg" alt="Pan/tilt robot proxy architecture" width="70%" />
+</p>
 
 Ariel is not built around the idea that every new robot needs a large hand-authored action API, a library of prebuilt skills, or retrained policies. The bet is that an LLM can adapt in context to a new robot if you give it:
 
@@ -79,6 +82,8 @@ Ariel is not built around the idea that every new robot needs a large hand-autho
 - a clear textual description of the robot's hardware and conventions
 
 In other words, the robot backend should be thin. The intelligence should come from the model writing code against that backend, not from a giant pile of pre-authored middleware.
+
+
 
 ### Run Your Own Robot
 

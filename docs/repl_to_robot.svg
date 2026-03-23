@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 600" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13">
+  <rect width="820" height="600" fill="#fff"/>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#555"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#16a34a"/>
+    </marker>
+    <style>
+      .cls-abstract { fill: #eef2ff; stroke: #4361ee; stroke-width: 1.5; rx: 6; }
+      .cls-concrete { fill: #f0fdf4; stroke: #16a34a; stroke-width: 1.5; rx: 6; }
+      .cls-hardware { fill: #fef2f2; stroke: #dc2626; stroke-width: 1.5; rx: 6; }
+      .cls-box { fill: #f8f9fa; stroke: #333; stroke-width: 1.5; rx: 6; }
+      .title { font-size: 14px; font-weight: 600; }
+      .abstract-tag { font-size: 10px; fill: #4361ee; font-style: italic; }
+      .section-tag { font-size: 10px; fill: #4361ee; font-style: italic; }
+      .method { font-size: 11px; fill: #444; font-family: 'SF Mono', 'Fira Code', monospace; }
+      .desc { font-size: 10px; fill: #888; font-style: italic; }
+      .sep { stroke: #ccc; stroke-width: 0.75; }
+      .inh-line { stroke: #555; stroke-width: 1.5; fill: none; }
+      .inject-line { stroke: #16a34a; stroke-width: 1.8; fill: none; }
+      .transport-line { stroke: #dc2626; stroke-width: 1.4; stroke-dasharray: 6,3; fill: none; }
+    </style>
+  </defs>
+
+  <!-- Title -->
+  <text x="410" y="28" text-anchor="middle" font-size="18" font-weight="700" fill="#222">REPL to Robot: Injection + Proxy Pattern</text>
+
+  <!-- ═══════════════ ABC ═══════════════ -->
+  <rect class="cls-box" x="345" y="50" width="170" height="32"/>
+  <text x="430" y="71" text-anchor="middle" class="title">ABC</text>
+
+  <!-- ═══════════════ RobotBase ═══════════════ -->
+  <rect class="cls-abstract" x="295" y="130" width="270" height="340"/>
+  <text x="305" y="148" class="abstract-tag">&lt;&lt;abstract&gt;&gt;</text>
+  <text x="430" y="166" text-anchor="middle" class="title">RobotBase</text>
+  <line x1="295" y1="174" x2="565" y2="174" class="sep"/>
+
+  <text x="305" y="188" class="section-tag">abstract — subclasses must implement</text>
+  <text x="305" y="204" class="method">+ connect()</text>
+  <text x="305" y="216" class="desc">Open connections to hardware</text>
+  <text x="305" y="232" class="method">+ close()</text>
+  <text x="305" y="244" class="desc">Release resources (safe to call multiple times)</text>
+  <text x="305" y="260" class="method">+ snapshot(device)</text>
+  <text x="305" y="272" class="desc">Grab latest state from a named device</text>
+  <text x="305" y="288" class="method">+ _device_docs()</text>
+  <text x="305" y="300" class="desc">Robot-specific hardware docs (markdown)</text>
+
+  <line x1="295" y1="310" x2="565" y2="310" class="sep"/>
+
+  <text x="305" y="324" class="section-tag">concrete — inherited by all robots</text>
+  <text x="305" y="340" class="method">+ describe()</text>
+  <text x="305" y="352" class="desc">Template: _device_docs() + _runtime_api_docs()</text>
+  <text x="305" y="368" class="method">+ show(fig)</text>
+  <text x="305" y="380" class="desc">Render matplotlib figure, queue for REPL return</text>
+  <text x="305" y="396" class="method">+ run(fn, duration, hz)</text>
+  <text x="305" y="408" class="desc">Blocking control loop at fixed rate</text>
+  <text x="305" y="424" class="method">+ start_task(name, fn)</text>
+  <text x="305" y="436" class="desc">Run fn(stop_event) in a background thread</text>
+  <text x="305" y="452" class="method">+ stop_task(name)</text>
+  <text x="305" y="464" class="desc">Signal stop and join a background task</text>
+
+  <!-- Inheritance: ABC → RobotBase -->
+  <line x1="430" y1="82" x2="430" y2="130" class="inh-line" marker-end="url(#arrow)"/>
+
+  <!-- ═══════════════ ConcreteRobotProxy ═══════════════ -->
+  <!-- 190 * 1.2 = 228 wide. Centered on x=430 → x=316 -->
+  <g transform="translate(316, 500)">
+    <rect width="228" height="56" rx="6" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+    <text x="114" y="18" text-anchor="middle" font-size="13" font-weight="600" fill="#333">ConcreteRobotProxy</text>
+    <text x="114" y="33" text-anchor="middle" font-size="9" fill="#888" font-style="italic">Implements abstract methods from RobotBase</text>
+    <text x="114" y="46" text-anchor="middle" font-size="9" fill="#888" font-style="italic">Adds robot-specific methods for this hardware</text>
+  </g>
+  <line x1="430" y1="470" x2="430" y2="500" class="inh-line" marker-end="url(#arrow)"/>
+
+  <!-- ═══════════════ REPL Terminal ═══════════════ -->
+  <!-- Aligned horizontally with ConcreteRobotProxy (y=500, center at y=528) -->
+  <g transform="translate(30, 490)">
+    <rect x="0" y="0" width="180" height="76" rx="8" fill="#1e1e2e" stroke="#444" stroke-width="1.5"/>
+    <text x="90" y="16" text-anchor="middle" font-size="10" fill="#888" font-family="monospace">REPL</text>
+    <text x="10" y="34" font-size="10" fill="#a6e3a1" font-family="monospace">&gt;&gt;&gt; robot.describe()</text>
+    <text x="10" y="48" font-size="10" fill="#cdd6f4" font-family="monospace"># Robot: Pan/Tilt...</text>
+    <text x="10" y="66" font-size="10" fill="#a6e3a1" font-family="monospace">&gt;&gt;&gt; robot.motors['pan']</text>
+  </g>
+
+  <!-- Injection arrow: ConcreteRobotProxy → REPL (straight horizontal) -->
+  <line x1="316" y1="528" x2="210" y2="528" class="inject-line" marker-end="url(#arrow-green)"/>
+  <text x="263" y="522" font-size="10" fill="#16a34a" text-anchor="middle" font-style="italic">injected as `robot`</text>
+  <text x="263" y="544" font-size="9" fill="#888" text-anchor="middle">(concrete type, not type-erased)</text>
+
+  <!-- ═══════════════ robot.conf + Loader ═══════════════ -->
+  <!-- Below REPL terminal -->
+  <g transform="translate(30, 580)">
+    <!-- robot.conf file icon -->
+    <rect x="0" y="0" width="110" height="16" rx="3" fill="#f8f9fa" stroke="#aaa" stroke-width="0.8"/>
+    <text x="55" y="12" text-anchor="middle" font-size="9" fill="#888" font-family="monospace">robot.conf</text>
+  </g>
+  <line x1="140" y1="588" x2="155" y2="588" stroke="#16a34a" stroke-width="1" marker-end="url(#arrow-green)"/>
+  <g transform="translate(160, 580)">
+    <rect x="0" y="0" width="90" height="16" rx="3" fill="#f0fdf4" stroke="#16a34a" stroke-width="0.8"/>
+    <text x="45" y="12" text-anchor="middle" font-size="9" fill="#16a34a">robot_loader</text>
+  </g>
+  <!-- Arrow from loader up to the injection line -->
+  <path d="M 205 580 L 205 568 L 263 568 L 263 548" stroke="#16a34a" stroke-width="1" fill="none"/>
+
+  <!-- ═══════════════ HardwareRobot ═══════════════ -->
+  <g transform="translate(630, 420)">
+    <rect width="170" height="80" rx="6" class="cls-hardware"/>
+    <text x="10" y="18" font-size="10" fill="#dc2626" font-style="italic">separate process</text>
+    <text x="85" y="38" text-anchor="middle" class="title">HardwareRobot</text>
+    <line x1="0" y1="46" x2="170" y2="46" class="sep"/>
+    <text x="10" y="62" class="method">+ start()</text>
+    <text x="10" y="76" class="method">+ stop()</text>
+  </g>
+
+  <!-- Transport arrow: ConcreteRobotProxy → HardwareRobot -->
+  <path d="M 544 528 C 590 528, 610 475, 630 460" class="transport-line" marker-end="url(#arrow)"/>
+  <text x="600" y="512" font-size="10" fill="#dc2626" text-anchor="middle" font-style="italic">transport</text>
+  <text x="600" y="524" font-size="9" fill="#999" text-anchor="middle">(ZMQ, gRPC, etc.)</text>
+
+  <!-- Robot hardware icon -->
+  <g transform="translate(665, 350)">
+    <rect width="100" height="50" rx="4" fill="none" stroke="#ddd" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="50" y="18" text-anchor="middle" font-size="9" fill="#aaa">physical hardware</text>
+    <text x="50" y="32" text-anchor="middle" font-size="9" fill="#aaa">camera, motors,</text>
+    <text x="50" y="44" text-anchor="middle" font-size="9" fill="#aaa">sensors ...</text>
+  </g>
+  <line x1="715" y1="400" x2="715" y2="420" stroke="#ddd" stroke-width="1" stroke-dasharray="3,2"/>
+</svg>
