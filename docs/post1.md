@@ -55,7 +55,7 @@ The LLM is writing Python against a live robot object, running that code, inspec
 <img src="assets/architecture.svg" alt="Architecture" width="700px" />
 </p>
 
-I used an extremely simple robot: just a couple of dynamixel motors arranged in a pan-tilt configuration, holding a usb camera.
+I used an extremely simple robot: just a couple of dynamixel motors arranged in a pan-tilt configuration, holding a usb camera. The API exposed to the LLM is low-level: direct position control on individual motors, and raw camera frames. There are no high-level abstractions like 'look at object' — the model has to build those itself.
 
 The hardware robot and the proxy were written using [roboflex](https://github.com/flexrobotics), and communication between docker and the hardware process was over zmq/tcp. The same can be done with ROS or any other appropriate robotics middleware.
 
