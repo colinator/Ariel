@@ -111,6 +111,16 @@ The REPL is already clearly useful. The model is not just emitting one static an
 
 This approach obviously brings safety, security and alignment concerns. After all, it gives a high-level AI direct programmatic control over a robot at a very fine level! This is veering into sci-fi territory, but then again, so is everything these days.
 
+## Prior Art
+
+- **Code as Policies** (Google, 2022) — LLM generates Python for robot APIs. The foundational paper for LLM-authored robot code.
+- **Language to Rewards** (DeepMind, 2023) — LLM writes reward code, local MPC runs at high frequency. Best example of the two-tier pattern.
+- **ros-mcp-server** — MCP + ROS integration, but command dispatch, not code deployment.
+- **robot_MCP** — MCP server for SO-ARM100, direct motor commands.
+- **ROSA** (NASA JPL) — ReAct LLM agent for ROS with safety constraints.
+- **Voyager** (NVIDIA) — LLM writes code, executes, stores successful programs. Skill library pattern.
+- **LeRobot** (HuggingFace) — ML-first robotics, pure Python, no ROS. Focused on learned policies, not LLM-authored control.
+
 ## Next Steps
 
 This robot is trivial, admittedly. I award AI a white belt in robot-fu so far. Need a bigger robot.
