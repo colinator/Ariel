@@ -9,6 +9,7 @@ so Roboflex metrics are available immediately for operator debugging.
 from __future__ import annotations
 
 import argparse
+import math
 import signal
 import time
 
@@ -208,6 +209,7 @@ class ArmPiFPVHardware:
             print("Self-test: initial joints", initial_joints, flush=True)
             print("Self-test: initial pose", initial_pose, flush=True)
             print("Self-test: initial gripper openness", initial_gripper, flush=True)
+            print("Self-test: initial gripper pulse", robot.gripper.get_raw_pulse(), flush=True)
 
             if save_frame_path:
                 from PIL import Image
@@ -216,87 +218,55 @@ class ArmPiFPVHardware:
                 Image.fromarray(frame).save(save_frame_path)
                 print(f"Self-test: saved frame to {save_frame_path}", flush=True)
 
-            # Explicitly restore the measured live pose before starting any checks.
             print("Self-test: restoring measured starting pose before test...", flush=True)
             robot.arm.move_joints(initial_joints, move_time=0.8)
             robot.gripper.set_position(initial_gripper, move_time=0.8)
             time.sleep(1.0)
 
-            print("Self-test: opening gripper...", flush=True)
-            robot.gripper.open(move_time=0.6)
-            time.sleep(0.8)
+            delta_rad = math.radians(10.0)
+            print("Self-test: wiggling each arm joint around the remembered starting position...", flush=True)
+            for joint_name in initial_joints:
+                print(f"Self-test: joint {joint_name} +10deg in 1s...", flush=True)
+                plus_target = dict(initial_joints)
+                plus_target[joint_name] = initial_joints[joint_name] + delta_rad
+                robot.arm.move_joints(plus_target, move_time=1.0)
+                time.sleep(1.4)
+                print("  measured", robot.arm.get_joint_positions(), flush=True)
 
-            print("Self-test: closing gripper...", flush=True)
-            robot.gripper.close(move_time=0.6)
-            time.sleep(0.8)
+                print(f"Self-test: joint {joint_name} -10deg in 2s...", flush=True)
+                minus_target = dict(initial_joints)
+                minus_target[joint_name] = initial_joints[joint_name] - delta_rad
+                robot.arm.move_joints(minus_target, move_time=2.0)
+                time.sleep(2.4)
+                print("  measured", robot.arm.get_joint_positions(), flush=True)
 
-            print("Self-test: restoring initial gripper...", flush=True)
-            robot.gripper.set_position(initial_gripper, move_time=0.6)
-            time.sleep(0.8)
+                print(f"Self-test: joint {joint_name} restore in 1s...", flush=True)
+                robot.arm.move_joints(initial_joints, move_time=1.0)
+                time.sleep(1.4)
+                print("  measured", robot.arm.get_joint_positions(), flush=True)
 
-            current_joints = robot.arm.get_joint_positions()
-            sequence = [
-                {
-                    "name": "base_yaw_small_positive",
-                    "joints": {
-                        **current_joints,
-                        "base_yaw": current_joints["base_yaw"] + 0.10,
-                    },
-                    "move_time": 0.8,
-                },
-                {
-                    "name": "base_yaw_restore",
-                    "joints": current_joints,
-                    "move_time": 0.8,
-                },
-                {
-                    "name": "wrist_roll_small_positive",
-                    "joints": {
-                        **current_joints,
-                        "wrist_roll": current_joints["wrist_roll"] + 0.10,
-                    },
-                    "move_time": 0.8,
-                },
-                {
-                    "name": "wrist_roll_restore",
-                    "joints": current_joints,
-                    "move_time": 0.8,
-                },
-                {
-                    "name": "elbow_small_positive",
-                    "joints": {
-                        **current_joints,
-                        "elbow": current_joints["elbow"] + 0.10,
-                    },
-                    "move_time": 0.8,
-                },
-                {
-                    "name": "elbow_restore",
-                    "joints": current_joints,
-                    "move_time": 0.8,
-                },
-                {
-                    "name": "shoulder_small_positive",
-                    "joints": {
-                        **current_joints,
-                        "shoulder": current_joints["shoulder"] + 0.08,
-                    },
-                    "move_time": 0.8,
-                },
-                {
-                    "name": "shoulder_restore",
-                    "joints": current_joints,
-                    "move_time": 0.8,
-                },
-            ]
+            print("Self-test: wiggling gripper around the remembered starting position...", flush=True)
+            gripper_delta = 0.15
+            open_target = min(1.0, initial_gripper + gripper_delta)
+            close_target = max(0.0, initial_gripper - gripper_delta)
 
-            print("Self-test: running small incremental arm checks from the measured starting pose...", flush=True)
-            for step in sequence:
-                print(f"Self-test: {step['name']}...", flush=True)
-                robot.arm.move_joints(step["joints"], move_time=step["move_time"])
-                time.sleep(step["move_time"] + 0.4)
-                print("  joints", robot.arm.get_joint_positions(), flush=True)
-                print("  pose", robot.arm.get_pose(), flush=True)
+            print("Self-test: gripper +delta in 1s...", flush=True)
+            robot.gripper.set_position(open_target, move_time=1.0)
+            time.sleep(1.4)
+            print("  measured openness", robot.gripper.get_position(), flush=True)
+            print("  measured pulse", robot.gripper.get_raw_pulse(), flush=True)
+
+            print("Self-test: gripper -delta in 2s...", flush=True)
+            robot.gripper.set_position(close_target, move_time=2.0)
+            time.sleep(2.4)
+            print("  measured openness", robot.gripper.get_position(), flush=True)
+            print("  measured pulse", robot.gripper.get_raw_pulse(), flush=True)
+
+            print("Self-test: gripper restore in 1s...", flush=True)
+            robot.gripper.set_position(initial_gripper, move_time=1.0)
+            time.sleep(1.4)
+            print("  measured openness", robot.gripper.get_position(), flush=True)
+            print("  measured pulse", robot.gripper.get_raw_pulse(), flush=True)
 
             print("Self-test: restoring initial arm/gripper state...", flush=True)
             robot.arm.move_joints(initial_joints, move_time=1.0)
