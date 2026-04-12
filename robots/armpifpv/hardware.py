@@ -127,10 +127,10 @@ class ArmPiFPVHardware:
         read_config.set_every_n_loops(rhs.DynamicReadField.TemperatureC, SERVO_TELEMETRY_EVERY_N_LOOPS)
         read_config.set_every_n_loops(rhs.DynamicReadField.TorqueEnabled, SERVO_TELEMETRY_EVERY_N_LOOPS)
 
-        self._servo_node = rhs.HiwonderBusServoGroupNode(
+        self._servo_node = rhs.HiwonderBusServoOneShotGroupNode(
             controller,
             read_config,
-            name="ArmPiServoNode",
+            name="ArmPiServoOneShotNode",
         )
 
         self._command_sub = rzmq.ZMQSubscriber(
