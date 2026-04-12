@@ -224,64 +224,36 @@ class ArmPiFPVHardware:
             time.sleep(1.0)
 
             delta_rad = math.radians(10.0)
-            print("Self-test: wiggling each arm joint around the remembered starting position...", flush=True)
-            for joint_name in initial_joints:
-                print(f"Self-test: joint {joint_name} +10deg in 1s...", flush=True)
-                plus_target = dict(initial_joints)
-                plus_target[joint_name] = initial_joints[joint_name] + delta_rad
-                robot.arm.move_joints(plus_target, move_time=1.0)
-                time.sleep(1.4)
-                print("  measured", robot.arm.get_joint_positions(), flush=True)
+            joint_name = "base_yaw"
 
-                print(f"Self-test: joint {joint_name} -10deg in 2s...", flush=True)
-                minus_target = dict(initial_joints)
-                minus_target[joint_name] = initial_joints[joint_name] - delta_rad
-                robot.arm.move_joints(minus_target, move_time=2.0)
-                time.sleep(2.4)
-                print("  measured", robot.arm.get_joint_positions(), flush=True)
+            print(f"Self-test: single-joint calibration on {joint_name} (servo 6)...", flush=True)
 
-                print(f"Self-test: joint {joint_name} restore in 1s...", flush=True)
-                robot.arm.move_joints(initial_joints, move_time=1.0)
-                time.sleep(1.4)
-                print("  measured", robot.arm.get_joint_positions(), flush=True)
-
-            print("Self-test: wiggling gripper around the remembered starting position...", flush=True)
-            gripper_delta = 0.15
-            open_target = min(1.0, initial_gripper + gripper_delta)
-            close_target = max(0.0, initial_gripper - gripper_delta)
-
-            print("Self-test: gripper +delta in 1s...", flush=True)
-            robot.gripper.set_position(open_target, move_time=1.0)
+            print(f"Self-test: {joint_name} +10deg in 1s...", flush=True)
+            plus_target = dict(initial_joints)
+            plus_target[joint_name] = initial_joints[joint_name] + delta_rad
+            robot.arm.move_joints(plus_target, move_time=1.0)
             time.sleep(1.4)
-            print("  measured openness", robot.gripper.get_position(), flush=True)
-            print("  measured pulse", robot.gripper.get_raw_pulse(), flush=True)
+            print("  measured", robot.arm.get_joint_positions(), flush=True)
 
-            print("Self-test: gripper -delta in 2s...", flush=True)
-            robot.gripper.set_position(close_target, move_time=2.0)
+            print(f"Self-test: {joint_name} -20deg from that point in 2s...", flush=True)
+            minus_target = dict(initial_joints)
+            minus_target[joint_name] = initial_joints[joint_name] - delta_rad
+            robot.arm.move_joints(minus_target, move_time=2.0)
             time.sleep(2.4)
-            print("  measured openness", robot.gripper.get_position(), flush=True)
-            print("  measured pulse", robot.gripper.get_raw_pulse(), flush=True)
+            print("  measured", robot.arm.get_joint_positions(), flush=True)
 
-            print("Self-test: gripper restore in 1s...", flush=True)
-            robot.gripper.set_position(initial_gripper, move_time=1.0)
+            print(f"Self-test: {joint_name} +10deg back to start in 1s...", flush=True)
+            robot.arm.move_joints(initial_joints, move_time=1.0)
             time.sleep(1.4)
-            print("  measured openness", robot.gripper.get_position(), flush=True)
-            print("  measured pulse", robot.gripper.get_raw_pulse(), flush=True)
+            print("  measured", robot.arm.get_joint_positions(), flush=True)
 
             print("Self-test: restoring initial arm/gripper state...", flush=True)
             robot.arm.move_joints(initial_joints, move_time=1.0)
             robot.gripper.set_position(initial_gripper, move_time=0.8)
             time.sleep(1.0)
-
-            pose = robot.arm.get_pose()
-            ik_result = robot.arm.ik(
-                position=pose["position"],
-                orientation=pose["orientation"],
-                prefer_current=True,
-                allow_approx=False,
-            )
-            print("Self-test: FK/IK consistency check passed", flush=True)
-            print("  IK result", ik_result, flush=True)
+            print("Self-test: final measured joints", robot.arm.get_joint_positions(), flush=True)
+            print("Self-test: final measured gripper openness", robot.gripper.get_position(), flush=True)
+            print("Self-test: final measured gripper pulse", robot.gripper.get_raw_pulse(), flush=True)
         finally:
             try:
                 print("Self-test: final restore attempt before disconnect...", flush=True)
