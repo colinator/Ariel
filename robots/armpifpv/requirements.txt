@@ -1,0 +1,11 @@
+numpy>=2
+roboflex
+roboflex.hiwonder_bus_servo
+roboflex.transport.zmq
+roboflex.transport.mqtt
+roboflex.webcam_gst
+roboflex.util.jpeg
+python-opencv
+Pillow
+matplotlib
+opencv-python-headless
