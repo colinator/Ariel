@@ -186,6 +186,23 @@ class GripperProxy:
         return (0.0, 1.0)
 
 
+class RawServoProxy:
+    def __init__(self, robot: "ArmPiFPVRobotProxy", name: str):
+        self._robot = robot
+        self.name = name
+        self.id = SERVO_ID_BY_NAME[name]
+
+    def get_pulse(self) -> int:
+        state = self._robot._latest_state_for(self.name)
+        pulse = state["pulse"]
+        if pulse is None:
+            raise RuntimeError(f"pulse is not available yet for '{self.name}'")
+        return int(pulse)
+
+    def move_to_pulse(self, pulse: int, move_time: float = DEFAULT_MOVE_TIME_S) -> int:
+        return self._robot._send_raw_servo_pulse(self.id, pulse, move_time=move_time)
+
+
 class ArmProxy:
     def __init__(self, robot: "ArmPiFPVRobotProxy"):
         self._robot = robot
@@ -260,6 +277,7 @@ class ArmPiFPVRobotProxy(RobotBase):
 
         self.cameras = {}
         self.motors = {}
+        self.servos = {}
         self.arm = ArmProxy(self)
         self.gripper = GripperProxy(self)
 
@@ -281,7 +299,9 @@ class ArmPiFPVRobotProxy(RobotBase):
 
         for name in ARM_JOINT_NAMES:
             self.motors[name] = JointProxy(self, name)
+            self.servos[name] = RawServoProxy(self, name)
         self.motors["gripper"] = self.gripper
+        self.servos["gripper"] = RawServoProxy(self, "gripper")
 
         self._publish_command(rhs.HiwonderBusServoGroupCommand())
         time.sleep(1.0)
@@ -303,6 +323,7 @@ class ArmPiFPVRobotProxy(RobotBase):
         self._cmd_pub = None
         self.cameras = {}
         self.motors = {}
+        self.servos = {}
         self.arm = ArmProxy(self)
         self.gripper = GripperProxy(self)
         self._connected = False
@@ -331,6 +352,15 @@ class ArmPiFPVRobotProxy(RobotBase):
         command.duration_ms = int(round(max(move_time, 0.01) * 1000.0))
         command.positions = {SERVO_ID_BY_NAME["gripper"]: _gripper_openness_to_pulse(openness)}
         self._publish_command(command)
+
+    def _send_raw_servo_pulse(self, servo_id: int, pulse: int, move_time: float) -> int:
+        command = rhs.HiwonderBusServoGroupCommand()
+        command.should_write = True
+        command.duration_ms = int(round(max(move_time, 0.01) * 1000.0))
+        clamped = int(round(min(max(pulse, 0), 1000)))
+        command.positions = {servo_id: clamped}
+        self._publish_command(command)
+        return clamped
 
     def _stop_servos(self):
         command = rhs.HiwonderBusServoGroupCommand()

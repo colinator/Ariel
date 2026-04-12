@@ -9,7 +9,6 @@ so Roboflex metrics are available immediately for operator debugging.
 from __future__ import annotations
 
 import argparse
-import math
 import signal
 import time
 
@@ -179,6 +178,7 @@ class ArmPiFPVHardware:
         robot = ArmPiFPVRobotProxy()
         initial_joints = None
         initial_gripper = None
+        initial_base_pulse = None
         try:
             print("Connecting local proxy for self-test...", flush=True)
             robot.connect()
@@ -198,18 +198,18 @@ class ArmPiFPVHardware:
                 try:
                     initial_joints = robot.arm.get_joint_positions()
                     initial_gripper = robot.gripper.get_position()
+                    initial_base_pulse = robot.servos["base_yaw"].get_pulse()
                     break
                 except Exception:
                     time.sleep(0.1)
             else:
-                raise RuntimeError("did not receive a complete initial arm/gripper state for self-test")
+                raise RuntimeError("did not receive a complete initial arm/gripper/base state for self-test")
 
             print("Self-test: initial status", robot.is_alive(), flush=True)
-            initial_pose = robot.arm.get_pose()
             print("Self-test: initial joints", initial_joints, flush=True)
-            print("Self-test: initial pose", initial_pose, flush=True)
             print("Self-test: initial gripper openness", initial_gripper, flush=True)
             print("Self-test: initial gripper pulse", robot.gripper.get_raw_pulse(), flush=True)
+            print("Self-test: initial base_yaw pulse", initial_base_pulse, flush=True)
 
             if save_frame_path:
                 from PIL import Image
@@ -218,50 +218,54 @@ class ArmPiFPVHardware:
                 Image.fromarray(frame).save(save_frame_path)
                 print(f"Self-test: saved frame to {save_frame_path}", flush=True)
 
-            print("Self-test: restoring measured starting pose before test...", flush=True)
-            robot.arm.move_joints(initial_joints, move_time=0.8)
-            robot.gripper.set_position(initial_gripper, move_time=0.8)
-            time.sleep(1.0)
+            counts_per_deg = 1000.0 / 240.0
+            delta_deg = 10.0
+            delta_counts = int(round(delta_deg * counts_per_deg))
+            pos_target = max(0, min(1000, initial_base_pulse + delta_counts))
+            neg_target = max(0, min(1000, initial_base_pulse - delta_counts))
 
-            delta_rad = math.radians(10.0)
-            joint_name = "base_yaw"
+            print("Self-test: raw single-servo calibration on base_yaw / servo 6...", flush=True)
+            print(
+                f"  center={initial_base_pulse}  pos_target={pos_target}  neg_target={neg_target}",
+                flush=True,
+            )
 
-            print(f"Self-test: single-joint calibration on {joint_name} (servo 6)...", flush=True)
-
-            print(f"Self-test: {joint_name} +10deg in 1s...", flush=True)
-            plus_target = dict(initial_joints)
-            plus_target[joint_name] = initial_joints[joint_name] + delta_rad
-            robot.arm.move_joints(plus_target, move_time=1.0)
+            print("Self-test: servo 6 to +10deg in 1s...", flush=True)
+            robot.servos["base_yaw"].move_to_pulse(pos_target, move_time=1.0)
             time.sleep(1.4)
-            print("  measured", robot.arm.get_joint_positions(), flush=True)
+            print("  measured pulse", robot.servos["base_yaw"].get_pulse(), flush=True)
+            print("  measured joints", robot.arm.get_joint_positions(), flush=True)
 
-            print(f"Self-test: {joint_name} -20deg from that point in 2s...", flush=True)
-            minus_target = dict(initial_joints)
-            minus_target[joint_name] = initial_joints[joint_name] - delta_rad
-            robot.arm.move_joints(minus_target, move_time=2.0)
+            print("Self-test: servo 6 to -10deg-from-start in 2s...", flush=True)
+            robot.servos["base_yaw"].move_to_pulse(neg_target, move_time=2.0)
             time.sleep(2.4)
-            print("  measured", robot.arm.get_joint_positions(), flush=True)
+            print("  measured pulse", robot.servos["base_yaw"].get_pulse(), flush=True)
+            print("  measured joints", robot.arm.get_joint_positions(), flush=True)
 
-            print(f"Self-test: {joint_name} +10deg back to start in 1s...", flush=True)
-            robot.arm.move_joints(initial_joints, move_time=1.0)
+            print("Self-test: servo 6 return to start in 1s...", flush=True)
+            robot.servos["base_yaw"].move_to_pulse(initial_base_pulse, move_time=1.0)
             time.sleep(1.4)
-            print("  measured", robot.arm.get_joint_positions(), flush=True)
+            print("  measured pulse", robot.servos["base_yaw"].get_pulse(), flush=True)
+            print("  measured joints", robot.arm.get_joint_positions(), flush=True)
 
-            print("Self-test: restoring initial arm/gripper state...", flush=True)
-            robot.arm.move_joints(initial_joints, move_time=1.0)
+            print("Self-test: restoring initial state...", flush=True)
+            robot.servos["base_yaw"].move_to_pulse(initial_base_pulse, move_time=1.0)
             robot.gripper.set_position(initial_gripper, move_time=0.8)
             time.sleep(1.0)
             print("Self-test: final measured joints", robot.arm.get_joint_positions(), flush=True)
             print("Self-test: final measured gripper openness", robot.gripper.get_position(), flush=True)
             print("Self-test: final measured gripper pulse", robot.gripper.get_raw_pulse(), flush=True)
+            print("Self-test: final measured base_yaw pulse", robot.servos["base_yaw"].get_pulse(), flush=True)
         finally:
             try:
                 print("Self-test: final restore attempt before disconnect...", flush=True)
-                if initial_joints is not None:
+                if initial_base_pulse is not None:
+                    robot.servos["base_yaw"].move_to_pulse(initial_base_pulse, move_time=1.0)
+                elif initial_joints is not None:
                     robot.arm.move_joints(initial_joints, move_time=1.0)
                 if initial_gripper is not None:
                     robot.gripper.set_position(initial_gripper, move_time=0.8)
-                if initial_joints is not None or initial_gripper is not None:
+                if initial_base_pulse is not None or initial_joints is not None or initial_gripper is not None:
                     time.sleep(1.0)
             except Exception:
                 pass
