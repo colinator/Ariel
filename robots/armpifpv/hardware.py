@@ -14,6 +14,7 @@ import time
 
 import roboflex as rf
 import roboflex.hiwonder_bus_servo as rhs
+import roboflex.transport.mqtt as rtm
 import roboflex.transport.zmq as rzmq
 import roboflex.util.jpeg as ruj
 import roboflex.webcam_gst as rcw
@@ -26,7 +27,11 @@ from .config import (
     CAMERA_USE_JPEG,
     CAMERA_WIDTH,
     GRAPH_DEBUG,
+    GRAPH_METRICS_BROKER,
+    GRAPH_METRICS_PORT,
     GRAPH_METRICS_PRINTING_HZ,
+    GRAPH_METRICS_QOS,
+    GRAPH_METRICS_TOPIC,
     SERVO_BAUD_RATE,
     SERVO_DEVICE_NAME,
     SERVO_DYNAMIC_READ_EVERY_N_LOOPS,
@@ -51,14 +56,38 @@ class ArmPiFPVHardware:
         self._command_sub = None
         self._camera_pub = None
         self._state_pub = None
+        self._mqtt_ctx = None
+        self._metrics_pub = None
 
-    def start(self):
-        self._zmq_ctx = rzmq.ZMQContext()
-        self._graph = rf.GraphRoot(
-            GRAPH_METRICS_PRINTING_HZ,
+    def _make_graph_root(self):
+        if GRAPH_METRICS_BROKER:
+            self._mqtt_ctx = rtm.MQTTContext()
+            self._metrics_pub = rtm.MQTTPublisher(
+                self._mqtt_ctx,
+                GRAPH_METRICS_BROKER,
+                GRAPH_METRICS_PORT,
+                GRAPH_METRICS_TOPIC,
+                name="ArmPiMetricsPub",
+                qos=GRAPH_METRICS_QOS,
+                debug=False,
+            )
+            return rf.GraphRoot(
+                self._metrics_pub,
+                GRAPH_METRICS_PRINTING_HZ,
+                name="ArmPiFPVGraph",
+                debug=GRAPH_DEBUG,
+            )
+
+        # No broker configured: keep metrics off stdout and simply run the graph.
+        return rf.GraphRoot(
+            0.0,
             name="ArmPiFPVGraph",
             debug=GRAPH_DEBUG,
         )
+
+    def start(self):
+        self._zmq_ctx = rzmq.ZMQContext()
+        self._graph = self._make_graph_root()
 
         self._camera = rcw.WebcamSensor(
             CAMERA_WIDTH,
@@ -118,7 +147,10 @@ class ArmPiFPVHardware:
         )
 
         self._graph > self._command_sub > self._servo_node > self._state_pub
-        self._graph.profile()
+        if GRAPH_METRICS_BROKER:
+            self._graph.profile()
+        else:
+            self._graph.start_all()
 
         print("ArmPi-FPV hardware server running.", flush=True)
         print(f"  Camera: {CAMERA_WIDTH}x{CAMERA_HEIGHT}@{CAMERA_FPS}, device_index={CAMERA_DEVICE_INDEX}", flush=True)
@@ -126,7 +158,13 @@ class ArmPiFPVHardware:
         print(f"  Servo device: {SERVO_DEVICE_NAME} @ {SERVO_BAUD_RATE}", flush=True)
         print(f"    Servo state pub: {ZMQ_SERVO_STATE_BIND}", flush=True)
         print(f"    Servo cmd sub:   {ZMQ_SERVO_CMD_CONNECT}", flush=True)
-        print(f"  Graph metrics: enabled via GraphRoot at {GRAPH_METRICS_PRINTING_HZ} Hz", flush=True)
+        if GRAPH_METRICS_BROKER:
+            print(
+                f"  Graph metrics: MQTT {GRAPH_METRICS_BROKER}:{GRAPH_METRICS_PORT} topic={GRAPH_METRICS_TOPIC} @ {GRAPH_METRICS_PRINTING_HZ} Hz",
+                flush=True,
+            )
+        else:
+            print("  Graph metrics: disabled (set ARMPIFPV_GRAPH_METRICS_BROKER to enable MQTT metrics)", flush=True)
 
     def stop(self):
         if self._graph is not None:
@@ -154,8 +192,10 @@ class ArmPiFPVHardware:
             print("Self-test: initial status", robot.is_alive(), flush=True)
             initial_joints = robot.arm.get_joint_positions()
             initial_pose = robot.arm.get_pose()
+            initial_gripper = robot.gripper.get_position()
             print("Self-test: initial joints", initial_joints, flush=True)
             print("Self-test: initial pose", initial_pose, flush=True)
+            print("Self-test: initial gripper openness", initial_gripper, flush=True)
 
             if save_frame_path:
                 from PIL import Image
@@ -164,71 +204,92 @@ class ArmPiFPVHardware:
                 Image.fromarray(frame).save(save_frame_path)
                 print(f"Self-test: saved frame to {save_frame_path}", flush=True)
 
-            print("Self-test: opening gripper...", flush=True)
-            robot.gripper.open(move_time=0.8)
+            # Explicitly restore the measured live pose before starting any checks.
+            print("Self-test: restoring measured starting pose before test...", flush=True)
+            robot.arm.move_joints(initial_joints, move_time=0.8)
+            robot.gripper.set_position(initial_gripper, move_time=0.8)
             time.sleep(1.0)
+
+            print("Self-test: opening gripper...", flush=True)
+            robot.gripper.open(move_time=0.6)
+            time.sleep(0.8)
 
             print("Self-test: closing gripper...", flush=True)
-            robot.gripper.close(move_time=0.8)
-            time.sleep(1.0)
+            robot.gripper.close(move_time=0.6)
+            time.sleep(0.8)
 
-            print("Self-test: reopening gripper...", flush=True)
-            robot.gripper.open(move_time=0.8)
-            time.sleep(1.0)
+            print("Self-test: restoring initial gripper...", flush=True)
+            robot.gripper.set_position(initial_gripper, move_time=0.6)
+            time.sleep(0.8)
 
-            print("Self-test: moving to home pose...", flush=True)
-            robot.arm.home(move_time=1.2)
-            time.sleep(1.5)
-
-            home_joints = robot.arm.get_joint_positions()
+            current_joints = robot.arm.get_joint_positions()
             sequence = [
                 {
-                    "name": "base_yaw_left",
+                    "name": "base_yaw_small_positive",
                     "joints": {
-                        **home_joints,
-                        "base_yaw": home_joints["base_yaw"] + 0.25,
+                        **current_joints,
+                        "base_yaw": current_joints["base_yaw"] + 0.10,
                     },
-                    "move_time": 1.0,
+                    "move_time": 0.8,
                 },
                 {
-                    "name": "base_yaw_right",
-                    "joints": {
-                        **home_joints,
-                        "base_yaw": home_joints["base_yaw"] - 0.25,
-                    },
-                    "move_time": 1.0,
+                    "name": "base_yaw_restore",
+                    "joints": current_joints,
+                    "move_time": 0.8,
                 },
                 {
-                    "name": "shoulder_elbow_check",
+                    "name": "wrist_roll_small_positive",
                     "joints": {
-                        **home_joints,
-                        "shoulder": home_joints["shoulder"] + 0.18,
-                        "elbow": home_joints["elbow"] - 0.18,
+                        **current_joints,
+                        "wrist_roll": current_joints["wrist_roll"] + 0.10,
                     },
-                    "move_time": 1.0,
+                    "move_time": 0.8,
                 },
                 {
-                    "name": "wrist_check",
-                    "joints": {
-                        **home_joints,
-                        "wrist_pitch": home_joints["wrist_pitch"] + 0.18,
-                        "wrist_roll": home_joints["wrist_roll"] + 0.20,
-                    },
-                    "move_time": 1.0,
+                    "name": "wrist_roll_restore",
+                    "joints": current_joints,
+                    "move_time": 0.8,
                 },
                 {
-                    "name": "return_home",
-                    "joints": home_joints,
-                    "move_time": 1.2,
+                    "name": "elbow_small_positive",
+                    "joints": {
+                        **current_joints,
+                        "elbow": current_joints["elbow"] + 0.10,
+                    },
+                    "move_time": 0.8,
+                },
+                {
+                    "name": "elbow_restore",
+                    "joints": current_joints,
+                    "move_time": 0.8,
+                },
+                {
+                    "name": "shoulder_small_positive",
+                    "joints": {
+                        **current_joints,
+                        "shoulder": current_joints["shoulder"] + 0.08,
+                    },
+                    "move_time": 0.8,
+                },
+                {
+                    "name": "shoulder_restore",
+                    "joints": current_joints,
+                    "move_time": 0.8,
                 },
             ]
 
+            print("Self-test: running small incremental arm checks from the measured starting pose...", flush=True)
             for step in sequence:
                 print(f"Self-test: {step['name']}...", flush=True)
                 robot.arm.move_joints(step["joints"], move_time=step["move_time"])
                 time.sleep(step["move_time"] + 0.4)
                 print("  joints", robot.arm.get_joint_positions(), flush=True)
                 print("  pose", robot.arm.get_pose(), flush=True)
+
+            print("Self-test: restoring initial arm/gripper state...", flush=True)
+            robot.arm.move_joints(initial_joints, move_time=1.0)
+            robot.gripper.set_position(initial_gripper, move_time=0.8)
+            time.sleep(1.0)
 
             pose = robot.arm.get_pose()
             ik_result = robot.arm.ik(
@@ -240,6 +301,13 @@ class ArmPiFPVHardware:
             print("Self-test: FK/IK consistency check passed", flush=True)
             print("  IK result", ik_result, flush=True)
         finally:
+            try:
+                print("Self-test: final restore attempt before disconnect...", flush=True)
+                robot.arm.move_joints(initial_joints, move_time=1.0)
+                robot.gripper.set_position(initial_gripper, move_time=0.8)
+                time.sleep(1.0)
+            except Exception:
+                pass
             try:
                 robot.close()
             except Exception:
