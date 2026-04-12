@@ -176,6 +176,8 @@ class ArmPiFPVHardware:
         from .robot import ArmPiFPVRobotProxy
 
         robot = ArmPiFPVRobotProxy()
+        initial_joints = None
+        initial_gripper = None
         try:
             print("Connecting local proxy for self-test...", flush=True)
             robot.connect()
@@ -189,10 +191,20 @@ class ArmPiFPVHardware:
             else:
                 raise RuntimeError("hardware graph started, but local proxy did not receive camera/servo data")
 
+            # Servo state may be alive before every actuator has a valid position sample.
+            deadline = time.time() + 5.0
+            while time.time() < deadline:
+                try:
+                    initial_joints = robot.arm.get_joint_positions()
+                    initial_gripper = robot.gripper.get_position()
+                    break
+                except Exception:
+                    time.sleep(0.1)
+            else:
+                raise RuntimeError("did not receive a complete initial arm/gripper state for self-test")
+
             print("Self-test: initial status", robot.is_alive(), flush=True)
-            initial_joints = robot.arm.get_joint_positions()
             initial_pose = robot.arm.get_pose()
-            initial_gripper = robot.gripper.get_position()
             print("Self-test: initial joints", initial_joints, flush=True)
             print("Self-test: initial pose", initial_pose, flush=True)
             print("Self-test: initial gripper openness", initial_gripper, flush=True)
@@ -303,9 +315,12 @@ class ArmPiFPVHardware:
         finally:
             try:
                 print("Self-test: final restore attempt before disconnect...", flush=True)
-                robot.arm.move_joints(initial_joints, move_time=1.0)
-                robot.gripper.set_position(initial_gripper, move_time=0.8)
-                time.sleep(1.0)
+                if initial_joints is not None:
+                    robot.arm.move_joints(initial_joints, move_time=1.0)
+                if initial_gripper is not None:
+                    robot.gripper.set_position(initial_gripper, move_time=0.8)
+                if initial_joints is not None or initial_gripper is not None:
+                    time.sleep(1.0)
             except Exception:
                 pass
             try:

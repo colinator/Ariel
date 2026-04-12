@@ -47,6 +47,8 @@ def _gripper_openness_to_pulse(value: float) -> int:
 
 
 def _gripper_pulse_to_openness(pulse: float) -> float:
+    if pulse is None:
+        raise RuntimeError("gripper pulse is not available yet")
     denom = GRIPPER_OPEN_PULSE - GRIPPER_CLOSED_PULSE
     if denom == 0:
         return 0.0
