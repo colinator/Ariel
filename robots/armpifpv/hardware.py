@@ -219,43 +219,48 @@ class ArmPiFPVHardware:
                 print(f"Self-test: saved frame to {save_frame_path}", flush=True)
 
             counts_per_deg = 1000.0 / 240.0
-            delta_deg = 10.0
+            delta_deg = 20.0
             delta_counts = int(round(delta_deg * counts_per_deg))
-            pos_target = max(0, min(1000, initial_base_pulse + delta_counts))
-            neg_target = max(0, min(1000, initial_base_pulse - delta_counts))
 
-            print("Self-test: raw single-servo calibration on base_yaw / servo 6...", flush=True)
-            print(
-                f"  center={initial_base_pulse}  pos_target={pos_target}  neg_target={neg_target}",
-                flush=True,
-            )
+            print("Self-test: raw per-servo calibration across all arm joints...", flush=True)
+            for joint_name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll"):
+                center_pulse = robot.servos[joint_name].get_pulse()
+                pos_target = max(0, min(1000, center_pulse + delta_counts))
+                neg_target = max(0, min(1000, center_pulse - delta_counts))
 
-            print("Self-test: servo 6 to +10deg in 1s...", flush=True)
-            robot.servos["base_yaw"].move_to_pulse(pos_target, move_time=1.0)
-            time.sleep(1.4)
-            print("  measured pulse", robot.servos["base_yaw"].get_pulse(), flush=True)
-            print("  measured joints", robot.arm.get_joint_positions(), flush=True)
+                print(
+                    f"Self-test: {joint_name} / servo {robot.servos[joint_name].id} "
+                    f"center={center_pulse} pos_target={pos_target} neg_target={neg_target}",
+                    flush=True,
+                )
 
-            print("Self-test: servo 6 to -10deg-from-start in 2s...", flush=True)
-            robot.servos["base_yaw"].move_to_pulse(neg_target, move_time=2.0)
-            time.sleep(2.4)
-            print("  measured pulse", robot.servos["base_yaw"].get_pulse(), flush=True)
-            print("  measured joints", robot.arm.get_joint_positions(), flush=True)
+                print(f"  {joint_name}: +20deg in 1s...", flush=True)
+                robot.servos[joint_name].move_to_pulse(pos_target, move_time=1.0)
+                time.sleep(1.4)
+                print("    measured pulse", robot.servos[joint_name].get_pulse(), flush=True)
+                print("    measured joints", robot.arm.get_joint_positions(), flush=True)
 
-            print("Self-test: servo 6 return to start in 1s...", flush=True)
-            robot.servos["base_yaw"].move_to_pulse(initial_base_pulse, move_time=1.0)
-            time.sleep(1.4)
-            print("  measured pulse", robot.servos["base_yaw"].get_pulse(), flush=True)
-            print("  measured joints", robot.arm.get_joint_positions(), flush=True)
+                print(f"  {joint_name}: -20deg-from-start in 2s...", flush=True)
+                robot.servos[joint_name].move_to_pulse(neg_target, move_time=2.0)
+                time.sleep(2.4)
+                print("    measured pulse", robot.servos[joint_name].get_pulse(), flush=True)
+                print("    measured joints", robot.arm.get_joint_positions(), flush=True)
+
+                print(f"  {joint_name}: return to start in 1s...", flush=True)
+                robot.servos[joint_name].move_to_pulse(center_pulse, move_time=1.0)
+                time.sleep(1.4)
+                print("    measured pulse", robot.servos[joint_name].get_pulse(), flush=True)
+                print("    measured joints", robot.arm.get_joint_positions(), flush=True)
 
             print("Self-test: restoring initial state...", flush=True)
-            robot.servos["base_yaw"].move_to_pulse(initial_base_pulse, move_time=1.0)
+            robot.arm.move_joints(initial_joints, move_time=1.2)
             robot.gripper.set_position(initial_gripper, move_time=0.8)
-            time.sleep(1.0)
+            time.sleep(1.4)
             print("Self-test: final measured joints", robot.arm.get_joint_positions(), flush=True)
             print("Self-test: final measured gripper openness", robot.gripper.get_position(), flush=True)
             print("Self-test: final measured gripper pulse", robot.gripper.get_raw_pulse(), flush=True)
-            print("Self-test: final measured base_yaw pulse", robot.servos["base_yaw"].get_pulse(), flush=True)
+            for joint_name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll"):
+                print(f"Self-test: final measured {joint_name} pulse {robot.servos[joint_name].get_pulse()}", flush=True)
         finally:
             try:
                 print("Self-test: final restore attempt before disconnect...", flush=True)
