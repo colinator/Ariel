@@ -171,6 +171,37 @@ class ArmPiFPVHardware:
             self._graph.stop()
             self._graph = None
 
+    def _wait_for_servo_pulse(
+        self,
+        robot,
+        joint_name: str,
+        target_pulse: int,
+        *,
+        move_time: float,
+        tolerance: int = 8,
+        settle_window_s: float = 0.35,
+        timeout_pad_s: float = 2.0,
+        poll_s: float = 0.05,
+    ) -> int | None:
+        """Wait until a servo readback is near the requested pulse or timeout expires."""
+        deadline = time.time() + move_time + timeout_pad_s
+        settled_since = None
+        last_pulse = None
+
+        while time.time() < deadline:
+            pulse = robot.servos[joint_name].get_pulse()
+            last_pulse = pulse
+            if pulse is not None and abs(pulse - target_pulse) <= tolerance:
+                if settled_since is None:
+                    settled_since = time.time()
+                elif time.time() - settled_since >= settle_window_s:
+                    return pulse
+            else:
+                settled_since = None
+            time.sleep(poll_s)
+
+        return last_pulse
+
     def run_self_test(self, save_frame_path: str | None = None):
         """Run a conservative local smoke test through the normal proxy path."""
         from .robot import ArmPiFPVRobotProxy
@@ -246,29 +277,29 @@ class ArmPiFPVHardware:
 
                 print(f"  {joint_name}: move BY +20deg in 1s...", flush=True)
                 robot.servos[joint_name].move_to_pulse(pos_target, move_time=1.0)
-                time.sleep(1.4)
-                print("    measured pulse", robot.servos[joint_name].get_pulse(), flush=True)
+                settled = self._wait_for_servo_pulse(robot, joint_name, pos_target, move_time=1.0)
+                print("    measured pulse", settled, flush=True)
                 print("    measured joints", robot.arm.get_joint_positions(), flush=True)
 
                 print(f"  {joint_name}: move BY -40deg in 2s (to start-20deg)...", flush=True)
                 robot.servos[joint_name].move_to_pulse(neg_target, move_time=2.0)
-                time.sleep(2.4)
-                print("    measured pulse", robot.servos[joint_name].get_pulse(), flush=True)
+                settled = self._wait_for_servo_pulse(robot, joint_name, neg_target, move_time=2.0)
+                print("    measured pulse", settled, flush=True)
                 print("    measured joints", robot.arm.get_joint_positions(), flush=True)
 
                 print(f"  {joint_name}: move BY +20deg back to start in 1s...", flush=True)
                 robot.servos[joint_name].move_to_pulse(start_pulse, move_time=1.0)
-                time.sleep(1.4)
-                print("    measured pulse", robot.servos[joint_name].get_pulse(), flush=True)
+                settled = self._wait_for_servo_pulse(robot, joint_name, start_pulse, move_time=1.0)
+                print("    measured pulse", settled, flush=True)
                 print("    measured joints", robot.arm.get_joint_positions(), flush=True)
 
             print("Self-test: restoring initial state...", flush=True)
             if initial_servo_pulses is not None:
                 for joint_name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll"):
                     robot.servos[joint_name].move_to_pulse(initial_servo_pulses[joint_name], move_time=1.0)
-                    time.sleep(1.2)
+                    self._wait_for_servo_pulse(robot, joint_name, initial_servo_pulses[joint_name], move_time=1.0)
                 robot.servos["gripper"].move_to_pulse(initial_servo_pulses["gripper"], move_time=0.8)
-                time.sleep(1.0)
+                self._wait_for_servo_pulse(robot, "gripper", initial_servo_pulses["gripper"], move_time=0.8)
             print("Self-test: final measured joints", robot.arm.get_joint_positions(), flush=True)
             print("Self-test: final measured gripper openness", robot.gripper.get_position(), flush=True)
             print("Self-test: final measured gripper pulse", robot.gripper.get_raw_pulse(), flush=True)
@@ -280,12 +311,12 @@ class ArmPiFPVHardware:
                 if initial_servo_pulses is not None:
                     for joint_name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll"):
                         robot.servos[joint_name].move_to_pulse(initial_servo_pulses[joint_name], move_time=1.0)
-                        time.sleep(1.2)
+                        self._wait_for_servo_pulse(robot, joint_name, initial_servo_pulses[joint_name], move_time=1.0)
                     robot.servos["gripper"].move_to_pulse(initial_servo_pulses["gripper"], move_time=0.8)
-                    time.sleep(1.0)
+                    self._wait_for_servo_pulse(robot, "gripper", initial_servo_pulses["gripper"], move_time=0.8)
                 elif initial_base_pulse is not None:
                     robot.servos["base_yaw"].move_to_pulse(initial_base_pulse, move_time=1.0)
-                    time.sleep(1.0)
+                    self._wait_for_servo_pulse(robot, "base_yaw", initial_base_pulse, move_time=1.0)
             except Exception:
                 pass
             try:
