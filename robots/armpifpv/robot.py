@@ -150,8 +150,8 @@ class JointProxy:
     def get_position(self) -> float:
         return self._robot.arm.get_joint_positions()[self.name]
 
-    def set_position(self, value: float, move_time: float = DEFAULT_MOVE_TIME_S) -> float:
-        self._robot.arm.set_joint_positions(move_time=move_time, **{self.name: value})
+    def set_position(self, value: float, move_time: float = DEFAULT_MOVE_TIME_S, wait: bool = False) -> float:
+        self._robot.arm.set_joint_positions(move_time=move_time, wait=wait, **{self.name: value})
         return self.get_position()
 
     def get_limits(self):
@@ -172,15 +172,45 @@ class GripperProxy:
         state = self._robot._latest_state_for("gripper")
         return int(state["pulse"])
 
-    def set_position(self, value: float, move_time: float = DEFAULT_MOVE_TIME_S) -> float:
+    def set_position(self, value: float, move_time: float = DEFAULT_MOVE_TIME_S, wait: bool = False) -> float:
         self._robot._send_gripper_openness(value, move_time=move_time)
+        if wait:
+            self.wait_until_near(value, timeout=move_time + 2.0)
         return _clamp_gripper_openness(value)
 
-    def open(self, move_time: float = DEFAULT_MOVE_TIME_S) -> float:
-        return self.set_position(1.0, move_time=move_time)
+    def open(self, move_time: float = DEFAULT_MOVE_TIME_S, wait: bool = False) -> float:
+        return self.set_position(1.0, move_time=move_time, wait=wait)
 
-    def close(self, move_time: float = DEFAULT_MOVE_TIME_S) -> float:
-        return self.set_position(0.0, move_time=move_time)
+    def close(self, move_time: float = DEFAULT_MOVE_TIME_S, wait: bool = False) -> float:
+        return self.set_position(0.0, move_time=move_time, wait=wait)
+
+    def wait_until_near(
+        self,
+        target_openness: float,
+        timeout: float | None = None,
+        tolerance: float = 0.08,
+        settle_time: float = 0.25,
+        poll_s: float = 0.05,
+    ) -> float:
+        target = _clamp_gripper_openness(target_openness)
+        deadline = time.time() + (timeout if timeout is not None else DEFAULT_MOVE_TIME_S + 2.0)
+        settled_since = None
+        last_value = None
+
+        while time.time() < deadline:
+            last_value = self.get_position()
+            if abs(last_value - target) <= tolerance:
+                if settled_since is None:
+                    settled_since = time.time()
+                elif time.time() - settled_since >= settle_time:
+                    return last_value
+            else:
+                settled_since = None
+            time.sleep(poll_s)
+
+        if last_value is None:
+            raise TimeoutError("gripper state not available before wait timed out")
+        return last_value
 
     def get_limits(self):
         return (0.0, 1.0)
@@ -210,25 +240,66 @@ class ArmProxy:
     def get_joint_positions(self) -> dict[str, float]:
         return self._robot._current_arm_joints()
 
-    def set_joint_positions(self, move_time: float = DEFAULT_MOVE_TIME_S, **kwargs) -> dict[str, float]:
+    def set_joint_positions(
+        self,
+        move_time: float = DEFAULT_MOVE_TIME_S,
+        wait: bool = False,
+        **kwargs,
+    ) -> dict[str, float]:
         current = self.get_joint_positions()
         target = dict(current)
         for name, value in kwargs.items():
             if name not in ARM_JOINT_NAMES:
                 raise ValueError(f"unknown arm joint '{name}', available: {ARM_JOINT_NAMES}")
             target[name] = float(value)
-        return self.move_joints(target, move_time=move_time)
+        return self.move_joints(target, move_time=move_time, wait=wait)
 
-    def move_joints(self, joints, move_time: float = DEFAULT_MOVE_TIME_S) -> dict[str, float]:
+    def move_joints(
+        self,
+        joints,
+        move_time: float = DEFAULT_MOVE_TIME_S,
+        wait: bool = False,
+        tolerance_rad: float = 0.10,
+    ) -> dict[str, float]:
         joint_dict = kinematics.coerce_joint_dict(joints)
         self._robot._send_arm_joints(joint_dict, move_time=move_time)
+        if wait:
+            return self.wait_until_joints_near(joint_dict, timeout=move_time + 2.0, tolerance_rad=tolerance_rad)
         return joint_dict
 
-    def home(self, move_time: float = DEFAULT_MOVE_TIME_S) -> dict[str, float]:
-        return self.move_joints(kinematics.home_arm_joints_rad(), move_time=move_time)
+    def home(self, move_time: float = DEFAULT_MOVE_TIME_S, wait: bool = False) -> dict[str, float]:
+        return self.move_joints(kinematics.home_arm_joints_rad(), move_time=move_time, wait=wait)
 
     def stop(self):
         self._robot._stop_servos()
+
+    def wait_until_joints_near(
+        self,
+        target_joints,
+        timeout: float | None = None,
+        tolerance_rad: float = 0.10,
+        settle_time: float = 0.25,
+        poll_s: float = 0.05,
+    ) -> dict[str, float]:
+        target = kinematics.coerce_joint_dict(target_joints)
+        deadline = time.time() + (timeout if timeout is not None else DEFAULT_MOVE_TIME_S + 2.0)
+        settled_since = None
+        last_joints = None
+
+        while time.time() < deadline:
+            last_joints = self.get_joint_positions()
+            if all(abs(last_joints[name] - target[name]) <= tolerance_rad for name in ARM_JOINT_NAMES):
+                if settled_since is None:
+                    settled_since = time.time()
+                elif time.time() - settled_since >= settle_time:
+                    return last_joints
+            else:
+                settled_since = None
+            time.sleep(poll_s)
+
+        if last_joints is None:
+            raise TimeoutError("arm joint state not available before wait timed out")
+        return last_joints
 
     def fk(self, joints=None) -> dict:
         if joints is None:
@@ -262,10 +333,13 @@ class ArmProxy:
         orientation,
         move_time: float = DEFAULT_MOVE_TIME_S,
         allow_approx: bool = True,
+        wait: bool = False,
         resolution=None,
     ) -> dict:
         result = self.ik(position, orientation, prefer_current=True, allow_approx=allow_approx, resolution=resolution)
-        self.move_joints(result["joints"], move_time=move_time)
+        reached = self.move_joints(result["joints"], move_time=move_time, wait=wait)
+        if wait:
+            result["joints_reached"] = reached
         return result
 
 
@@ -492,33 +566,36 @@ class ArmPiFPVRobotProxy(RobotBase):
         lines.append("")
         lines.append("### Arm Joint Motion")
         lines.append("  robot.arm.get_joint_positions() -> {'base_yaw': ..., 'shoulder': ..., ...}")
-        lines.append("  robot.arm.set_joint_positions(base_yaw=..., shoulder=..., move_time=1.0)")
-        lines.append("  robot.arm.move_joints({'base_yaw': ..., 'shoulder': ..., ...}, move_time=1.0)")
-        lines.append("  robot.arm.home(move_time=1.0)")
+        lines.append("  robot.arm.set_joint_positions(base_yaw=..., shoulder=..., move_time=1.0, wait=False)")
+        lines.append("  robot.arm.move_joints({'base_yaw': ..., 'shoulder': ..., ...}, move_time=1.0, wait=False)")
+        lines.append("  robot.arm.wait_until_joints_near(target_joints, timeout=3.0, tolerance_rad=0.10)")
+        lines.append("  robot.arm.home(move_time=1.0, wait=False)")
         lines.append("  robot.arm.stop()")
         lines.append("")
         lines.append("### Pose / FK / IK")
         lines.append("  robot.arm.get_pose() -> {'position': [x, y, z], 'orientation': [x, y, z, w], 'frame': 'base_link'}")
         lines.append("  robot.arm.fk(joints=None) -> same pose shape")
         lines.append("  robot.arm.ik(position=[x, y, z], orientation=[x, y, z, w], prefer_current=True, allow_approx=True)")
-        lines.append("  robot.arm.move_pose(position=[x, y, z], orientation=[x, y, z, w], move_time=1.0, allow_approx=True)")
+        lines.append("  robot.arm.move_pose(position=[x, y, z], orientation=[x, y, z, w], move_time=1.0, allow_approx=True, wait=False)")
         lines.append("")
         lines.append("  IMPORTANT:")
         lines.append("  Pose APIs use explicit SE(3)-style position + quaternion orientation.")
         lines.append("  This robot is only 5-DOF plus gripper, so it cannot realize arbitrary 6-DOF end-effector orientations.")
         lines.append("  IK may therefore approximate the requested orientation.")
         lines.append("  `robot.arm.ik(...)` returns both the requested and achieved poses, plus position/orientation error metrics.")
+        lines.append("  For multi-step tasks, prefer timed motion followed by `wait=True` or `robot.arm.wait_until_joints_near(...)` before the next action.")
         lines.append("")
         lines.append("### Individual Joints")
         for name in ARM_JOINT_NAMES:
             lines.append(f"  robot.motors['{name}'].get_position() -> radians")
-            lines.append(f"  robot.motors['{name}'].set_position(value_rad, move_time=1.0)")
+            lines.append(f"  robot.motors['{name}'].set_position(value_rad, move_time=1.0, wait=False)")
         lines.append("")
         lines.append("### Gripper")
         lines.append("  robot.gripper.get_position() -> openness in [0.0, 1.0]")
-        lines.append("  robot.gripper.set_position(openness, move_time=1.0)")
-        lines.append("  robot.gripper.open(move_time=1.0)")
-        lines.append("  robot.gripper.close(move_time=1.0)")
+        lines.append("  robot.gripper.set_position(openness, move_time=1.0, wait=False)")
+        lines.append("  robot.gripper.wait_until_near(target_openness, timeout=3.0, tolerance=0.08)")
+        lines.append("  robot.gripper.open(move_time=1.0, wait=False)")
+        lines.append("  robot.gripper.close(move_time=1.0, wait=False)")
         lines.append("")
         lines.append("### Introspection")
         lines.append("  robot.describe() -> this text")
@@ -528,6 +605,7 @@ class ArmPiFPVRobotProxy(RobotBase):
 
         lines.append("## Tips For LLM Control")
         lines.append("- Prefer `move_time` values around 0.5 to 2.0 seconds for ordinary repositioning.")
+        lines.append("- For reliable multi-step behaviors, use `wait=True` or call the explicit wait helpers before the next step.")
         lines.append("- Use `robot.arm.get_pose()` or `snapshot('arm')` before planning a grasp.")
         lines.append("- For grasping, think in terms of target tool pose, but expect orientation approximation because the arm is 5-DOF.")
         lines.append("- Call `robot.gripper.open()` before approach and `robot.gripper.close()` after the object is inside the jaws.")

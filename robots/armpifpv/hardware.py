@@ -32,6 +32,8 @@ from .config import (
     GRAPH_METRICS_PRINTING_HZ,
     GRAPH_METRICS_QOS,
     GRAPH_METRICS_TOPIC,
+    GRIPPER_CLOSED_PULSE,
+    GRIPPER_OPEN_PULSE,
     SERVO_BAUD_RATE,
     SERVO_DEVICE_NAME,
     SERVO_DYNAMIC_READ_EVERY_N_LOOPS,
@@ -292,6 +294,34 @@ class ArmPiFPVHardware:
                 settled = self._wait_for_servo_pulse(robot, joint_name, start_pulse, move_time=1.0)
                 print("    measured pulse", settled, flush=True)
                 print("    measured joints", robot.arm.get_joint_positions(), flush=True)
+
+            gripper_start = robot.servos["gripper"].get_pulse()
+            gripper_open_target = int(min(gripper_start, GRIPPER_OPEN_PULSE))
+            gripper_closed_target = int(max(gripper_start, GRIPPER_CLOSED_PULSE))
+            print(
+                "Self-test: gripper / servo "
+                f"{robot.servos['gripper'].id} start={gripper_start} "
+                f"open_target={gripper_open_target} closed_target={gripper_closed_target}",
+                flush=True,
+            )
+
+            print("  gripper: open in 0.8s...", flush=True)
+            robot.servos["gripper"].move_to_pulse(gripper_open_target, move_time=0.8)
+            settled = self._wait_for_servo_pulse(robot, "gripper", gripper_open_target, move_time=0.8)
+            print("    measured pulse", settled, flush=True)
+            print("    measured openness", robot.gripper.get_position(), flush=True)
+
+            print("  gripper: close in 0.8s...", flush=True)
+            robot.servos["gripper"].move_to_pulse(gripper_closed_target, move_time=0.8)
+            settled = self._wait_for_servo_pulse(robot, "gripper", gripper_closed_target, move_time=0.8)
+            print("    measured pulse", settled, flush=True)
+            print("    measured openness", robot.gripper.get_position(), flush=True)
+
+            print("  gripper: return to start in 0.8s...", flush=True)
+            robot.servos["gripper"].move_to_pulse(gripper_start, move_time=0.8)
+            settled = self._wait_for_servo_pulse(robot, "gripper", gripper_start, move_time=0.8)
+            print("    measured pulse", settled, flush=True)
+            print("    measured openness", robot.gripper.get_position(), flush=True)
 
             print("Self-test: restoring initial state...", flush=True)
             if initial_servo_pulses is not None:
