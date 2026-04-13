@@ -19,6 +19,7 @@ import roboflex.transport.zmq as rzmq
 import roboflex.util.jpeg as ruj
 import roboflex.webcam_gst as rcw
 
+from . import kinematics
 from .config import (
     ALL_SERVO_IDS,
     CAMERA_DEVICE_INDEX,
