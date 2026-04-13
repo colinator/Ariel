@@ -398,6 +398,19 @@ class ArmPiFPVHardware:
             }, flush=True)
             print("    measured gripper pulse", robot.servos["gripper"].get_pulse(), flush=True)
 
+            print("Self-test: FK/IK diagnostics on live state...", flush=True)
+            live_joints = robot.arm.get_joint_positions()
+            live_pose = robot.arm.get_pose()
+            print("  live joints", live_joints, flush=True)
+            print("  live pose", live_pose, flush=True)
+            ik_result = robot.arm.ik(
+                live_pose["position"],
+                live_pose["orientation"],
+                prefer_current=True,
+                allow_approx=True,
+            )
+            print("  ik(current_pose) ->", ik_result, flush=True)
+
             print("Self-test: restoring initial state...", flush=True)
             if initial_servo_pulses is not None:
                 for joint_name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll"):
