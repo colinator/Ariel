@@ -273,7 +273,10 @@ class ArmPiFPVHardware:
         settled_since = None
         last_pulse = None
         while time.time() < deadline:
-            pulse = self._direct_read_pulse(joint_name)
+            pulse = self._direct_read_pulse_retry(joint_name, retries=2, delay_s=min(poll_s, 0.05))
+            if pulse is None:
+                time.sleep(poll_s)
+                continue
             last_pulse = pulse
             if abs(pulse - target_pulse) <= tolerance:
                 if settled_since is None:
