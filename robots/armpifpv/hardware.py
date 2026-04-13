@@ -198,22 +198,56 @@ class ArmPiFPVHardware:
             raise RuntimeError(f"no direct pulse available for '{name}'")
         return int(pulse)
 
-    def _direct_read_servo_pulses(self) -> dict[str, int]:
-        return {
-            "base_yaw": self._direct_read_pulse("base_yaw"),
-            "shoulder": self._direct_read_pulse("shoulder"),
-            "elbow": self._direct_read_pulse("elbow"),
-            "wrist_pitch": self._direct_read_pulse("wrist_pitch"),
-            "wrist_roll": self._direct_read_pulse("wrist_roll"),
-            "gripper": self._direct_read_pulse("gripper"),
+    def _direct_read_pulse_retry(
+        self,
+        name: str,
+        *,
+        retries: int = 5,
+        delay_s: float = 0.05,
+    ) -> int | None:
+        last_error = None
+        for _ in range(retries):
+            try:
+                return self._direct_read_pulse(name)
+            except RuntimeError as exc:
+                last_error = exc
+                time.sleep(delay_s)
+        if last_error is not None:
+            return None
+        return None
+
+    def _direct_read_servo_pulses(self, *, strict: bool = True) -> dict[str, int | None]:
+        pulses = {
+            "base_yaw": self._direct_read_pulse_retry("base_yaw"),
+            "shoulder": self._direct_read_pulse_retry("shoulder"),
+            "elbow": self._direct_read_pulse_retry("elbow"),
+            "wrist_pitch": self._direct_read_pulse_retry("wrist_pitch"),
+            "wrist_roll": self._direct_read_pulse_retry("wrist_roll"),
+            "gripper": self._direct_read_pulse_retry("gripper"),
         }
+        if strict:
+            missing = [name for name, pulse in pulses.items() if pulse is None]
+            if missing:
+                raise RuntimeError(f"no direct pulse available for {missing}")
+        return pulses
 
     def _direct_arm_joints(self) -> dict[str, float]:
-        pulses = self._direct_read_servo_pulses()
+        pulses = self._direct_read_servo_pulses(strict=True)
         return kinematics.arm_pulses_to_joints({name: pulses[name] for name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll")})
 
     def _direct_fk_pose(self) -> dict:
         return kinematics.fk_pose(self._direct_arm_joints())
+
+    def _print_direct_snapshot(self, prefix: str):
+        pulses = self._direct_read_servo_pulses(strict=False)
+        print(f"{prefix} pulses", pulses, flush=True)
+        arm_missing = [name for name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll") if pulses[name] is None]
+        if arm_missing:
+            print(f"{prefix} joints unavailable (missing direct reads for {arm_missing})", flush=True)
+            return
+        joints = kinematics.arm_pulses_to_joints({name: pulses[name] for name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll")})
+        print(f"{prefix} joints", joints, flush=True)
+        print(f"{prefix} FK pose", kinematics.fk_pose(joints), flush=True)
 
     def _direct_write_positions(self, positions: dict[str, int], move_time: float):
         if self._controller is None:
@@ -539,7 +573,7 @@ class ArmPiFPVHardware:
         if self._controller is None:
             raise RuntimeError("controller is not initialized")
 
-        initial_servo_pulses = self._direct_read_servo_pulses()
+        initial_servo_pulses = self._direct_read_servo_pulses(strict=True)
         initial_joints = self._direct_arm_joints()
         print("Direct self-test: initial joints", initial_joints, flush=True)
         print("Direct self-test: initial FK pose", self._direct_fk_pose(), flush=True)
@@ -561,20 +595,17 @@ class ArmPiFPVHardware:
                 print(f"  {joint_name}: move BY +20deg...", flush=True)
                 self._direct_write_positions({joint_name: pos_target}, speed)
                 print("    measured pulse", self._wait_for_direct_servo_pulse(joint_name, pos_target, move_time=2.0 * speed), flush=True)
-                print("    measured joints", self._direct_arm_joints(), flush=True)
-                print("    measured FK pose", self._direct_fk_pose(), flush=True)
+                self._print_direct_snapshot("    measured")
 
                 print(f"  {joint_name}: move BY -40deg...", flush=True)
                 self._direct_write_positions({joint_name: neg_target}, 2.0 * speed)
                 print("    measured pulse", self._wait_for_direct_servo_pulse(joint_name, neg_target, move_time=4.0 * speed), flush=True)
-                print("    measured joints", self._direct_arm_joints(), flush=True)
-                print("    measured FK pose", self._direct_fk_pose(), flush=True)
+                self._print_direct_snapshot("    measured")
 
                 print(f"  {joint_name}: move BY +20deg back to start...", flush=True)
                 self._direct_write_positions({joint_name: start_pulse}, speed)
                 print("    measured pulse", self._wait_for_direct_servo_pulse(joint_name, start_pulse, move_time=2.0 * speed), flush=True)
-                print("    measured joints", self._direct_arm_joints(), flush=True)
-                print("    measured FK pose", self._direct_fk_pose(), flush=True)
+                self._print_direct_snapshot("    measured")
 
             gripper_start = self._direct_read_pulse("gripper")
             gripper_open_target = int(min(gripper_start, GRIPPER_OPEN_PULSE))
@@ -584,10 +615,11 @@ class ArmPiFPVHardware:
                 self._direct_write_positions({"gripper": target}, 0.8)
                 print(f"  gripper: {label}...", flush=True)
                 print("    measured pulse", self._wait_for_direct_servo_pulse("gripper", target, move_time=0.8), flush=True)
-                print("    measured openness", self._gripper_pulse_to_openness(self._direct_read_pulse("gripper")), flush=True)
-                print("    measured FK pose", self._direct_fk_pose(), flush=True)
+                gripper_pulse = self._direct_read_pulse_retry("gripper")
+                print("    measured openness", self._gripper_pulse_to_openness(gripper_pulse), flush=True)
+                self._print_direct_snapshot("    measured")
 
-            combined_start = self._direct_read_servo_pulses()
+            combined_start = self._direct_read_servo_pulses(strict=True)
             combined_pos = {name: max(0, min(1000, pulse + delta_counts)) for name, pulse in combined_start.items()}
             combined_neg = {name: max(0, min(1000, pulse - delta_counts)) for name, pulse in combined_start.items()}
             print("Direct self-test: coordinated whole-arm + gripper motion...", flush=True)
@@ -597,36 +629,40 @@ class ArmPiFPVHardware:
 
             self._direct_write_positions(combined_pos, 1.0)
             time.sleep(1.2)
-            print("    measured arm pulses", self._direct_read_servo_pulses(), flush=True)
-            print("    measured joints", self._direct_arm_joints(), flush=True)
-            print("    measured FK pose", self._direct_fk_pose(), flush=True)
+            self._print_direct_snapshot("    measured")
 
             self._direct_write_positions(combined_neg, 2.0)
             time.sleep(2.2)
-            print("    measured arm pulses", self._direct_read_servo_pulses(), flush=True)
-            print("    measured joints", self._direct_arm_joints(), flush=True)
-            print("    measured FK pose", self._direct_fk_pose(), flush=True)
+            self._print_direct_snapshot("    measured")
 
             self._direct_write_positions(combined_start, 1.0)
             time.sleep(1.2)
-            print("    measured arm pulses", self._direct_read_servo_pulses(), flush=True)
-            print("    measured joints", self._direct_arm_joints(), flush=True)
-            print("    measured FK pose", self._direct_fk_pose(), flush=True)
+            self._print_direct_snapshot("    measured")
 
-            live_joints = self._direct_arm_joints()
-            live_pose = kinematics.fk_pose(live_joints)
-            print("Direct self-test: FK/IK diagnostics on live state...", flush=True)
-            print("  live joints", live_joints, flush=True)
-            print("  live pose", live_pose, flush=True)
-            print("  ik(current_pose) ->", kinematics.solve_ik(live_pose["position"], live_pose["orientation"], initial_joints=live_joints, prefer_current=True, allow_approx=True), flush=True)
+            try:
+                live_joints = self._direct_arm_joints()
+                live_pose = kinematics.fk_pose(live_joints)
+                print("Direct self-test: FK/IK diagnostics on live state...", flush=True)
+                print("  live joints", live_joints, flush=True)
+                print("  live pose", live_pose, flush=True)
+                print("  ik(current_pose) ->", kinematics.solve_ik(live_pose["position"], live_pose["orientation"], initial_joints=live_joints, prefer_current=True, allow_approx=True), flush=True)
+            except RuntimeError as exc:
+                print(f"Direct self-test: skipped FK/IK diagnostics ({exc})", flush=True)
 
             print("Direct self-test: restoring initial state...", flush=True)
             self._direct_write_positions(initial_servo_pulses, 1.0)
             time.sleep(1.2)
-            print("Direct self-test: final measured joints", self._direct_arm_joints(), flush=True)
-            print("Direct self-test: final FK pose", self._direct_fk_pose(), flush=True)
-            print("Direct self-test: final measured gripper openness", self._gripper_pulse_to_openness(self._direct_read_pulse("gripper")), flush=True)
-            print("Direct self-test: final raw servo pulses", self._direct_read_servo_pulses(), flush=True)
+            final_pulses = self._direct_read_servo_pulses(strict=False)
+            print("Direct self-test: final raw servo pulses", final_pulses, flush=True)
+            if final_pulses["gripper"] is not None:
+                print("Direct self-test: final measured gripper openness", self._gripper_pulse_to_openness(final_pulses["gripper"]), flush=True)
+            arm_missing = [name for name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll") if final_pulses[name] is None]
+            if not arm_missing:
+                final_joints = kinematics.arm_pulses_to_joints({name: final_pulses[name] for name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll")})
+                print("Direct self-test: final measured joints", final_joints, flush=True)
+                print("Direct self-test: final FK pose", kinematics.fk_pose(final_joints), flush=True)
+            else:
+                print(f"Direct self-test: final joints unavailable (missing direct reads for {arm_missing})", flush=True)
         finally:
             try:
                 print("Direct self-test: final restore attempt before exit...", flush=True)
