@@ -323,6 +323,80 @@ class ArmPiFPVHardware:
             print("    measured pulse", settled, flush=True)
             print("    measured openness", robot.gripper.get_position(), flush=True)
 
+            combined_start_pulses = {
+                "base_yaw": robot.servos["base_yaw"].get_pulse(),
+                "shoulder": robot.servos["shoulder"].get_pulse(),
+                "elbow": robot.servos["elbow"].get_pulse(),
+                "wrist_pitch": robot.servos["wrist_pitch"].get_pulse(),
+                "wrist_roll": robot.servos["wrist_roll"].get_pulse(),
+                "gripper": robot.servos["gripper"].get_pulse(),
+            }
+            combined_pos_targets = {
+                name: max(0, min(1000, pulse + delta_counts))
+                for name, pulse in combined_start_pulses.items()
+                if name != "gripper"
+            }
+            combined_neg_targets = {
+                name: max(0, min(1000, pulse - delta_counts))
+                for name, pulse in combined_start_pulses.items()
+                if name != "gripper"
+            }
+            combined_pos_targets["gripper"] = max(0, min(1000, combined_start_pulses["gripper"] + delta_counts))
+            combined_neg_targets["gripper"] = max(0, min(1000, combined_start_pulses["gripper"] - delta_counts))
+
+            print("Self-test: coordinated whole-arm + gripper motion...", flush=True)
+            print("  combined start pulses", combined_start_pulses, flush=True)
+            print("  combined +20deg/+delta targets", combined_pos_targets, flush=True)
+            print("  combined -20deg/-delta targets", combined_neg_targets, flush=True)
+
+            print("  combined: move all BY +20deg/+delta in 1s...", flush=True)
+            robot.arm.move_joints(
+                {
+                    name: kinematics.pulse_to_radians(name, combined_pos_targets[name])
+                    for name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll")
+                },
+                move_time=1.0,
+            )
+            robot.servos["gripper"].move_to_pulse(combined_pos_targets["gripper"], move_time=1.0)
+            time.sleep(1.2)
+            print("    measured arm pulses", {
+                name: robot.servos[name].get_pulse()
+                for name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll")
+            }, flush=True)
+            print("    measured gripper pulse", robot.servos["gripper"].get_pulse(), flush=True)
+
+            print("  combined: move all BY -40deg/-2delta in 2s (to start-20deg)...", flush=True)
+            robot.arm.move_joints(
+                {
+                    name: kinematics.pulse_to_radians(name, combined_neg_targets[name])
+                    for name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll")
+                },
+                move_time=2.0,
+            )
+            robot.servos["gripper"].move_to_pulse(combined_neg_targets["gripper"], move_time=2.0)
+            time.sleep(2.2)
+            print("    measured arm pulses", {
+                name: robot.servos[name].get_pulse()
+                for name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll")
+            }, flush=True)
+            print("    measured gripper pulse", robot.servos["gripper"].get_pulse(), flush=True)
+
+            print("  combined: move all BY +20deg/+delta back to start in 1s...", flush=True)
+            robot.arm.move_joints(
+                {
+                    name: kinematics.pulse_to_radians(name, combined_start_pulses[name])
+                    for name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll")
+                },
+                move_time=1.0,
+            )
+            robot.servos["gripper"].move_to_pulse(combined_start_pulses["gripper"], move_time=1.0)
+            time.sleep(1.2)
+            print("    measured arm pulses", {
+                name: robot.servos[name].get_pulse()
+                for name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll")
+            }, flush=True)
+            print("    measured gripper pulse", robot.servos["gripper"].get_pulse(), flush=True)
+
             print("Self-test: restoring initial state...", flush=True)
             if initial_servo_pulses is not None:
                 for joint_name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll"):
