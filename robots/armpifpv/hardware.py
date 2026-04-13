@@ -250,6 +250,7 @@ class ArmPiFPVHardware:
 
             print("Self-test: initial status", robot.is_alive(), flush=True)
             print("Self-test: initial joints", initial_joints, flush=True)
+            print("Self-test: initial FK pose", robot.arm.get_pose(), flush=True)
             print("Self-test: initial gripper openness", initial_gripper, flush=True)
             print("Self-test: initial gripper pulse", robot.gripper.get_raw_pulse(), flush=True)
             print("Self-test: initial base_yaw pulse", initial_base_pulse, flush=True)
@@ -283,18 +284,21 @@ class ArmPiFPVHardware:
                 settled = self._wait_for_servo_pulse(robot, joint_name, pos_target, move_time=1.0)
                 print("    measured pulse", settled, flush=True)
                 print("    measured joints", robot.arm.get_joint_positions(), flush=True)
+                print("    measured FK pose", robot.arm.get_pose(), flush=True)
 
                 print(f"  {joint_name}: move BY -40deg in 2s (to start-20deg)...", flush=True)
                 robot.servos[joint_name].move_to_pulse(neg_target, move_time=2.0)
                 settled = self._wait_for_servo_pulse(robot, joint_name, neg_target, move_time=2.0)
                 print("    measured pulse", settled, flush=True)
                 print("    measured joints", robot.arm.get_joint_positions(), flush=True)
+                print("    measured FK pose", robot.arm.get_pose(), flush=True)
 
                 print(f"  {joint_name}: move BY +20deg back to start in 1s...", flush=True)
                 robot.servos[joint_name].move_to_pulse(start_pulse, move_time=1.0)
                 settled = self._wait_for_servo_pulse(robot, joint_name, start_pulse, move_time=1.0)
                 print("    measured pulse", settled, flush=True)
                 print("    measured joints", robot.arm.get_joint_positions(), flush=True)
+                print("    measured FK pose", robot.arm.get_pose(), flush=True)
 
             gripper_start = robot.servos["gripper"].get_pulse()
             gripper_open_target = int(min(gripper_start, GRIPPER_OPEN_PULSE))
@@ -311,18 +315,21 @@ class ArmPiFPVHardware:
             settled = self._wait_for_servo_pulse(robot, "gripper", gripper_open_target, move_time=0.8)
             print("    measured pulse", settled, flush=True)
             print("    measured openness", robot.gripper.get_position(), flush=True)
+            print("    measured FK pose", robot.arm.get_pose(), flush=True)
 
             print("  gripper: close in 0.8s...", flush=True)
             robot.servos["gripper"].move_to_pulse(gripper_closed_target, move_time=0.8)
             settled = self._wait_for_servo_pulse(robot, "gripper", gripper_closed_target, move_time=0.8)
             print("    measured pulse", settled, flush=True)
             print("    measured openness", robot.gripper.get_position(), flush=True)
+            print("    measured FK pose", robot.arm.get_pose(), flush=True)
 
             print("  gripper: return to start in 0.8s...", flush=True)
             robot.servos["gripper"].move_to_pulse(gripper_start, move_time=0.8)
             settled = self._wait_for_servo_pulse(robot, "gripper", gripper_start, move_time=0.8)
             print("    measured pulse", settled, flush=True)
             print("    measured openness", robot.gripper.get_position(), flush=True)
+            print("    measured FK pose", robot.arm.get_pose(), flush=True)
 
             combined_start_pulses = {
                 "base_yaw": robot.servos["base_yaw"].get_pulse(),
@@ -365,6 +372,8 @@ class ArmPiFPVHardware:
                 for name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll")
             }, flush=True)
             print("    measured gripper pulse", robot.servos["gripper"].get_pulse(), flush=True)
+            print("    measured joints", robot.arm.get_joint_positions(), flush=True)
+            print("    measured FK pose", robot.arm.get_pose(), flush=True)
 
             print("  combined: move all BY -40deg/-2delta in 2s (to start-20deg)...", flush=True)
             robot.arm.move_joints(
@@ -381,6 +390,8 @@ class ArmPiFPVHardware:
                 for name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll")
             }, flush=True)
             print("    measured gripper pulse", robot.servos["gripper"].get_pulse(), flush=True)
+            print("    measured joints", robot.arm.get_joint_positions(), flush=True)
+            print("    measured FK pose", robot.arm.get_pose(), flush=True)
 
             print("  combined: move all BY +20deg/+delta back to start in 1s...", flush=True)
             robot.arm.move_joints(
@@ -397,6 +408,8 @@ class ArmPiFPVHardware:
                 for name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll")
             }, flush=True)
             print("    measured gripper pulse", robot.servos["gripper"].get_pulse(), flush=True)
+            print("    measured joints", robot.arm.get_joint_positions(), flush=True)
+            print("    measured FK pose", robot.arm.get_pose(), flush=True)
 
             print("Self-test: FK/IK diagnostics on live state...", flush=True)
             live_joints = robot.arm.get_joint_positions()
@@ -419,6 +432,7 @@ class ArmPiFPVHardware:
                 robot.servos["gripper"].move_to_pulse(initial_servo_pulses["gripper"], move_time=0.8)
                 self._wait_for_servo_pulse(robot, "gripper", initial_servo_pulses["gripper"], move_time=0.8)
             print("Self-test: final measured joints", robot.arm.get_joint_positions(), flush=True)
+            print("Self-test: final FK pose", robot.arm.get_pose(), flush=True)
             print("Self-test: final measured gripper openness", robot.gripper.get_position(), flush=True)
             print("Self-test: final measured gripper pulse", robot.gripper.get_raw_pulse(), flush=True)
             for joint_name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll"):
