@@ -133,11 +133,25 @@ def _rot_z(theta: float) -> np.ndarray:
     return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]], dtype=float)
 
 
+def _translate(vec: Iterable[float]) -> np.ndarray:
+    return _transform(np.eye(3), vec)
+
+
 def _transform(rot: np.ndarray, trans: Iterable[float]) -> np.ndarray:
     T = np.eye(4, dtype=float)
     T[:3, :3] = rot
     T[:3, 3] = np.asarray(list(trans), dtype=float)
     return T
+
+
+def _mdh(alpha_prev: float, a_prev: float, theta: float, d: float = 0.0) -> np.ndarray:
+    """Modified DH transform: Rot_x(alpha) * Trans_x(a) * Rot_z(theta) * Trans_z(d)."""
+    return (
+        _transform(_rot_x(alpha_prev), [0.0, 0.0, 0.0]) @
+        _translate([a_prev, 0.0, 0.0]) @
+        _transform(_rot_z(theta), [0.0, 0.0, 0.0]) @
+        _translate([0.0, 0.0, d])
+    )
 
 
 def _angle_transform(value: float, params: list[float], inverse: bool = False) -> float:
@@ -205,13 +219,16 @@ def coerce_joint_dict(joints: dict[str, float] | Iterable[float] | None) -> dict
 
 def fk_matrix(joints: dict[str, float] | Iterable[float] | None = None) -> np.ndarray:
     q = coerce_joint_dict(joints)
-    T = np.eye(4, dtype=float)
-    T = T @ _transform(np.eye(3), [0.0, 0.0, BASE_HEIGHT_M])
-    T = T @ _transform(_rot_z(q["base_yaw"]), [0.0, 0.0, 0.0])
-    T = T @ _transform(_rot_x(q["shoulder"]), [0.0, 0.0, LINK1_M])
-    T = T @ _transform(_rot_x(q["elbow"]), [0.0, 0.0, LINK2_M])
-    T = T @ _transform(_rot_x(q["wrist_pitch"]), [0.0, 0.0, LINK3_M])
-    T = T @ _transform(_rot_z(q["wrist_roll"]), [0.0, 0.0, TOOL_LINK_M])
+    # Match the vendor transform.py structure: a Modified DH chain for the 5 arm
+    # joints, plus an explicit final tool reach. The vendor comments indicate the
+    # practical end-effector reach is modeled as link3 + tool_link.
+    T = _translate([0.0, 0.0, BASE_HEIGHT_M])
+    T = T @ _mdh(0.0, 0.0, q["base_yaw"], 0.0)
+    T = T @ _mdh(-math.pi / 2.0, 0.0, q["shoulder"], 0.0)
+    T = T @ _mdh(0.0, LINK1_M, q["elbow"], 0.0)
+    T = T @ _mdh(0.0, LINK2_M, q["wrist_pitch"], 0.0)
+    T = T @ _mdh(-math.pi / 2.0, 0.0, q["wrist_roll"], 0.0)
+    T = T @ _translate([LINK3_M + TOOL_LINK_M, 0.0, 0.0])
     return T
 
 
