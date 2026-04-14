@@ -61,8 +61,12 @@ STOW_ARM_PULSES = {
 
 GRIPPER_PULSE_MIN = 0
 GRIPPER_PULSE_MAX = 1000
+# Practical first-pass gripper endpoints from direct hardware testing.
+# This mechanism behaves more like a coarse open/close gripper than a
+# repeatable linear aperture actuator, so treat these as approximate working
+# pulses rather than precise geometric calibration.
 GRIPPER_OPEN_PULSE = 200
-GRIPPER_CLOSED_PULSE = 570
+GRIPPER_CLOSED_PULSE = 500
 GRIPPER_NEUTRAL_PULSE = 700
 
 BASE_HEIGHT_M = 0.064605

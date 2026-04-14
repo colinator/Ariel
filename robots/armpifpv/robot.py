@@ -41,6 +41,8 @@ def _clamp_gripper_openness(value: float) -> float:
 
 
 def _gripper_openness_to_pulse(value: float) -> int:
+    # Convenience mapping only: the ArmPi-FPV gripper is not calibrated as a
+    # linear jaw-width actuator, so normalized openness is approximate.
     openness = _clamp_gripper_openness(value)
     pulse = GRIPPER_CLOSED_PULSE + (GRIPPER_OPEN_PULSE - GRIPPER_CLOSED_PULSE) * openness
     return int(round(pulse))
@@ -555,8 +557,9 @@ class ArmPiFPVRobotProxy(RobotBase):
 
         lines.append("### Gripper")
         lines.append("  `robot.gripper` is a single parallel-jaw gripper DOF.")
-        lines.append("  Gripper API uses normalized openness: 0.0 = closed, 1.0 = open.")
-        lines.append(f"  Internally this maps to servo pulses approximately {GRIPPER_CLOSED_PULSE} (closed) to {GRIPPER_OPEN_PULSE} (open).")
+        lines.append("  Gripper API uses approximate normalized openness: 0.0 = more closed, 1.0 = more open.")
+        lines.append(f"  Practical first-pass pulses are about {GRIPPER_CLOSED_PULSE} for close-ish and {GRIPPER_OPEN_PULSE} for open-ish.")
+        lines.append("  Do not assume linear jaw width or exact repeatability from intermediate openness values.")
         lines.append("")
 
         lines.append("## robot API Reference")
@@ -591,7 +594,7 @@ class ArmPiFPVRobotProxy(RobotBase):
             lines.append(f"  robot.motors['{name}'].set_position(value_rad, move_time=1.0, wait=False)")
         lines.append("")
         lines.append("### Gripper")
-        lines.append("  robot.gripper.get_position() -> openness in [0.0, 1.0]")
+        lines.append("  robot.gripper.get_position() -> approximate openness in [0.0, 1.0]")
         lines.append("  robot.gripper.set_position(openness, move_time=1.0, wait=False)")
         lines.append("  robot.gripper.wait_until_near(target_openness, timeout=3.0, tolerance=0.08)")
         lines.append("  robot.gripper.open(move_time=1.0, wait=False)")
@@ -608,7 +611,7 @@ class ArmPiFPVRobotProxy(RobotBase):
         lines.append("- For reliable multi-step behaviors, use `wait=True` or call the explicit wait helpers before the next step.")
         lines.append("- Use `robot.arm.get_pose()` or `snapshot('arm')` before planning a grasp.")
         lines.append("- For grasping, think in terms of target tool pose, but expect orientation approximation because the arm is 5-DOF.")
-        lines.append("- Call `robot.gripper.open()` before approach and `robot.gripper.close()` after the object is inside the jaws.")
+        lines.append("- Prefer `robot.gripper.open()` / `robot.gripper.close()` over fine-grained openness targets unless you have calibrated this specific gripper.")
         lines.append("- If you need repeated closed-loop updates, keep the loop moderate. This is not a smooth high-bandwidth servo stack.")
         lines.append("- Frames from the camera are RGB, not BGR.")
         lines.append("")
