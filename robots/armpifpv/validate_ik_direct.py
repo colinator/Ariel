@@ -64,7 +64,7 @@ def main():
     parser.add_argument("--dx", type=float, default=0.0, help="target Cartesian x offset in meters")
     parser.add_argument("--dy", type=float, default=0.0, help="target Cartesian y offset in meters")
     parser.add_argument("--dz", type=float, default=0.01, help="target Cartesian z offset in meters")
-    parser.add_argument("--move-time", type=float, default=1.0, help="execution move time if --execute is used")
+    parser.add_argument("--move-time", type=float, default=0.3, help="execution move time if --execute is used")
     parser.add_argument("--execute", action="store_true", help="actually command the solved joint target")
     parser.add_argument("--allow-approx", action="store_true", help="allow approximate IK results instead of failing")
     args = parser.parse_args()

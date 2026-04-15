@@ -66,6 +66,57 @@ class ArmPiFPVKinematicsTests(unittest.TestCase):
                 msg=f"{name} IK recovery drifted too far",
             )
 
+    def test_base_yaw_step_rotates_xy_without_material_z_change(self):
+        joints = {
+            "base_yaw": math.radians(0.0),
+            "shoulder": math.radians(-120.0),
+            "elbow": math.radians(60.0),
+            "wrist_pitch": math.radians(-20.0),
+            "wrist_roll": math.radians(0.0),
+        }
+        pose0 = kinematics.fk_pose(joints)
+        joints["base_yaw"] += math.radians(10.0)
+        pose1 = kinematics.fk_pose(joints)
+
+        p0 = np.asarray(pose0["position"], dtype=float)
+        p1 = np.asarray(pose1["position"], dtype=float)
+        r0 = float(np.linalg.norm(p0[:2]))
+        r1 = float(np.linalg.norm(p1[:2]))
+
+        self.assertAlmostEqual(p0[2], p1[2], delta=0.01)
+        self.assertAlmostEqual(r0, r1, delta=0.01)
+
+    def test_small_z_offset_ik_stays_close_to_seed(self):
+        sample_joints = {
+            "base_yaw": math.radians(-5.0),
+            "shoulder": math.radians(-145.0),
+            "elbow": math.radians(80.0),
+            "wrist_pitch": math.radians(-15.0),
+            "wrist_roll": math.radians(0.0),
+        }
+        pose = kinematics.fk_pose(sample_joints)
+        requested_position = list(pose["position"])
+        requested_position[2] += 0.01
+
+        result = kinematics.solve_ik(
+            requested_position,
+            pose["orientation"],
+            initial_joints=sample_joints,
+            prefer_current=True,
+            allow_approx=True,
+            max_iters=300,
+        )
+
+        self.assertTrue(result["success"])
+        self.assertLessEqual(result["position_error_m"], 0.02)
+        self.assertLessEqual(result["orientation_error_rad"], 0.30)
+
+        max_joint_delta = max(
+            abs(result["joints"][name] - sample_joints[name])
+            for name in ARM_JOINT_NAMES
+        )
+        self.assertLessEqual(max_joint_delta, math.radians(20.0))
+
 
 if __name__ == "__main__":
     unittest.main()

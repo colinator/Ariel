@@ -319,6 +319,53 @@ class ArmPiFPVHardware:
 
         return last_pulse
 
+    def _wait_for_servo_pulses(
+        self,
+        robot,
+        targets: dict[str, int],
+        *,
+        move_time: float,
+        tolerance: int = 8,
+        settle_window_s: float = 0.35,
+        timeout_pad_s: float = 2.0,
+        poll_s: float = 0.1,
+    ) -> dict[str, int | None]:
+        return {
+            joint_name: self._wait_for_servo_pulse(
+                robot,
+                joint_name,
+                target_pulse,
+                move_time=move_time,
+                tolerance=tolerance,
+                settle_window_s=settle_window_s,
+                timeout_pad_s=timeout_pad_s,
+                poll_s=poll_s,
+            )
+            for joint_name, target_pulse in targets.items()
+        }
+
+    def _restore_proxy_servo_pulses(self, robot, target_pulses: dict[str, int], *, move_time: float = 1.0):
+        robot.arm.move_joints(
+            {
+                name: kinematics.pulse_to_radians(name, target_pulses[name])
+                for name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll")
+            },
+            move_time=move_time,
+        )
+        robot.servos["gripper"].move_to_pulse(target_pulses["gripper"], move_time=min(move_time, 0.8))
+        return self._wait_for_servo_pulses(
+            robot,
+            {
+                "base_yaw": target_pulses["base_yaw"],
+                "shoulder": target_pulses["shoulder"],
+                "elbow": target_pulses["elbow"],
+                "wrist_pitch": target_pulses["wrist_pitch"],
+                "wrist_roll": target_pulses["wrist_roll"],
+                "gripper": target_pulses["gripper"],
+            },
+            move_time=move_time,
+        )
+
     def run_self_test(self, save_frame_path: str | None = None):
         """Run a conservative local smoke test through the normal proxy path."""
         from .robot import ArmPiFPVRobotProxy
@@ -481,7 +528,7 @@ class ArmPiFPVHardware:
                 move_time=1.0,
             )
             robot.servos["gripper"].move_to_pulse(combined_pos_targets["gripper"], move_time=1.0)
-            time.sleep(1.2)
+            self._wait_for_servo_pulses(robot, combined_pos_targets, move_time=1.0)
             print("    measured arm pulses", {
                 name: robot.servos[name].get_pulse()
                 for name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll")
@@ -499,7 +546,7 @@ class ArmPiFPVHardware:
                 move_time=2.0,
             )
             robot.servos["gripper"].move_to_pulse(combined_neg_targets["gripper"], move_time=2.0)
-            time.sleep(2.2)
+            self._wait_for_servo_pulses(robot, combined_neg_targets, move_time=2.0)
             print("    measured arm pulses", {
                 name: robot.servos[name].get_pulse()
                 for name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll")
@@ -517,7 +564,7 @@ class ArmPiFPVHardware:
                 move_time=1.0,
             )
             robot.servos["gripper"].move_to_pulse(combined_start_pulses["gripper"], move_time=1.0)
-            time.sleep(1.2)
+            self._wait_for_servo_pulses(robot, combined_start_pulses, move_time=1.0)
             print("    measured arm pulses", {
                 name: robot.servos[name].get_pulse()
                 for name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll")
@@ -541,11 +588,8 @@ class ArmPiFPVHardware:
 
             print("Self-test: restoring initial state...", flush=True)
             if initial_servo_pulses is not None:
-                for joint_name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll"):
-                    robot.servos[joint_name].move_to_pulse(initial_servo_pulses[joint_name], move_time=1.0)
-                    self._wait_for_servo_pulse(robot, joint_name, initial_servo_pulses[joint_name], move_time=1.0)
-                robot.servos["gripper"].move_to_pulse(initial_servo_pulses["gripper"], move_time=0.8)
-                self._wait_for_servo_pulse(robot, "gripper", initial_servo_pulses["gripper"], move_time=0.8)
+                restore_measured = self._restore_proxy_servo_pulses(robot, initial_servo_pulses, move_time=1.0)
+                print("Self-test: restore measured pulses", restore_measured, flush=True)
             print("Self-test: final measured joints", robot.arm.get_joint_positions(), flush=True)
             print("Self-test: final FK pose", robot.arm.get_pose(), flush=True)
             print("Self-test: final measured gripper openness", robot.gripper.get_position(), flush=True)
@@ -556,11 +600,7 @@ class ArmPiFPVHardware:
             try:
                 print("Self-test: final restore attempt before disconnect...", flush=True)
                 if initial_servo_pulses is not None:
-                    for joint_name in ("base_yaw", "shoulder", "elbow", "wrist_pitch", "wrist_roll"):
-                        robot.servos[joint_name].move_to_pulse(initial_servo_pulses[joint_name], move_time=1.0)
-                        self._wait_for_servo_pulse(robot, joint_name, initial_servo_pulses[joint_name], move_time=1.0)
-                    robot.servos["gripper"].move_to_pulse(initial_servo_pulses["gripper"], move_time=0.8)
-                    self._wait_for_servo_pulse(robot, "gripper", initial_servo_pulses["gripper"], move_time=0.8)
+                    self._restore_proxy_servo_pulses(robot, initial_servo_pulses, move_time=1.0)
                 elif initial_base_pulse is not None:
                     robot.servos["base_yaw"].move_to_pulse(initial_base_pulse, move_time=1.0)
                     self._wait_for_servo_pulse(robot, "base_yaw", initial_base_pulse, move_time=1.0)
@@ -630,17 +670,18 @@ class ArmPiFPVHardware:
             print("  combined +delta targets", combined_pos, flush=True)
             print("  combined -delta targets", combined_neg, flush=True)
 
-            self._direct_write_positions(combined_pos, 1.0)
-            time.sleep(1.2)
-            self._print_direct_snapshot("    measured")
+            for speed in [0.3, 0.5, 0.7, 0.9, 1.1]:
+                self._direct_write_positions(combined_pos, speed)
+                time.sleep(speed+0.5)
+                self._print_direct_snapshot("    measured")
 
-            self._direct_write_positions(combined_neg, 2.0)
-            time.sleep(2.2)
-            self._print_direct_snapshot("    measured")
+                self._direct_write_positions(combined_neg, 2.0*speed)
+                time.sleep(2.0*speed+0.5)
+                self._print_direct_snapshot("    measured")
 
-            self._direct_write_positions(combined_start, 1.0)
-            time.sleep(1.2)
-            self._print_direct_snapshot("    measured")
+                self._direct_write_positions(combined_start, speed)
+                time.sleep(speed+0.5)
+                self._print_direct_snapshot("    measured")
 
             try:
                 live_joints = self._direct_arm_joints()
