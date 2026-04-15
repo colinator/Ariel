@@ -1,22 +1,27 @@
 #!/usr/bin/env python3
-"""Direct IK validation helper for ArmPi-FPV.
+"""Direct Cartesian IK validation helper for ArmPi-FPV.
 
-Default behavior is solver-only:
-- read current arm pulses directly
-- compute current FK pose
-- apply a small requested Cartesian offset
-- solve IK from the current joint state
-- print requested vs achieved pose and solver errors
+This script performs a small Cartesian neighborhood test around the current
+pose. Because the ArmPi-FPV is only 5-DOF plus gripper, it cannot hold an
+arbitrary full 6-DOF pose exactly while translating in XYZ. So this test keeps
+the current orientation as a soft preference, allows approximation, and checks
+how the achieved pose actually changes.
 
-Optional `--execute` will command the returned joint target directly and then
-measure the resulting pulses / FK pose.
+For each axis, it executes:
+- +s
+- -2s
+- +s
+
+where s is the user-supplied step size in meters.
 """
 
 from __future__ import annotations
 
 import argparse
+import math
 import time
 
+import numpy as np
 import roboflex.hiwonder_bus_servo as rhs
 
 from . import kinematics
@@ -42,10 +47,10 @@ def _read_position_retry(controller: rhs.HiwonderBusServoController, servo_id: i
 
 
 def _read_arm_pulses(controller: rhs.HiwonderBusServoController):
-    pulses = {}
-    for name, servo_id in ARM_SERVO_ID_BY_NAME.items():
-        pulses[name] = _read_position_retry(controller, servo_id)
-    return pulses
+    return {
+        name: _read_position_retry(controller, servo_id)
+        for name, servo_id in ARM_SERVO_ID_BY_NAME.items()
+    }
 
 
 def _arm_joints_from_pulses(pulses):
@@ -55,18 +60,87 @@ def _arm_joints_from_pulses(pulses):
     return kinematics.arm_pulses_to_joints(pulses)
 
 
-def _apply_offset(position, dx: float, dy: float, dz: float):
-    return [position[0] + dx, position[1] + dy, position[2] + dz]
+def _position_delta(a, b):
+    return (np.asarray(b, dtype=float) - np.asarray(a, dtype=float)).tolist()
+
+
+def _write_joints(controller: rhs.HiwonderBusServoController, joints: dict[str, float], move_time: float):
+    pulses = kinematics.arm_joints_to_pulses(joints)
+    controller.write_positions_ms(
+        int(round(max(move_time, 0.1) * 1000.0)),
+        {ARM_SERVO_ID_BY_NAME[name]: pulse for name, pulse in pulses.items()},
+    )
+    return pulses
+
+
+def _read_pose(controller: rhs.HiwonderBusServoController):
+    pulses = _read_arm_pulses(controller)
+    joints = _arm_joints_from_pulses(pulses)
+    pose = kinematics.fk_pose(joints)
+    return pulses, joints, pose
+
+
+def _run_step(controller, label: str, axis: str, delta_m: float, move_time: float, current_joints: dict[str, float], orientation_xyzw):
+    current_pose = kinematics.fk_pose(current_joints)
+    requested_position = list(current_pose["position"])
+    axis_index = {"x": 0, "y": 1, "z": 2}[axis]
+    requested_position[axis_index] += delta_m
+
+    result = kinematics.solve_ik(
+        requested_position,
+        orientation_xyzw,
+        initial_joints=current_joints,
+        prefer_current=True,
+        allow_approx=True,
+    )
+    target_pulses = kinematics.arm_joints_to_pulses(result["joints"])
+
+    print(f"{label}: requested position {requested_position}", flush=True)
+    print(f"{label}: solver result {result}", flush=True)
+    print(f"{label}: target pulses {target_pulses}", flush=True)
+
+    _write_joints(controller, result["joints"], move_time)
+    time.sleep(move_time + 0.4)
+
+    final_pulses, final_joints, final_pose = _read_pose(controller)
+    print(f"{label}: final pulses {final_pulses}", flush=True)
+    print(f"{label}: final joints {final_joints}", flush=True)
+    print(f"{label}: final pose {final_pose}", flush=True)
+    print(
+        f"{label}: achieved position delta "
+        f"{_position_delta(current_pose['position'], final_pose['position'])}",
+        flush=True,
+    )
+    print(
+        f"{label}: orientation drift rad "
+        f"{result['orientation_error_rad']:.4f}",
+        flush=True,
+    )
+    return final_joints, final_pose
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Validate IK directly against the local controller.")
-    parser.add_argument("--dx", type=float, default=0.0, help="target Cartesian x offset in meters")
-    parser.add_argument("--dy", type=float, default=0.0, help="target Cartesian y offset in meters")
-    parser.add_argument("--dz", type=float, default=0.01, help="target Cartesian z offset in meters")
-    parser.add_argument("--move-time", type=float, default=0.3, help="execution move time if --execute is used")
-    parser.add_argument("--execute", action="store_true", help="actually command the solved joint target")
-    parser.add_argument("--allow-approx", action="store_true", help="allow approximate IK results instead of failing")
+    parser = argparse.ArgumentParser(description="Run a direct Cartesian neighborhood IK test against the local controller.")
+    parser.add_argument(
+        "--step",
+        "-s",
+        type=float,
+        default=0.01,
+        help="Cartesian step size in meters for each axis sequence",
+    )
+    parser.add_argument(
+        "--move-time",
+        type=float,
+        default=0.3,
+        help="move time in seconds for each Cartesian step",
+    )
+    parser.add_argument(
+        "--axes",
+        nargs="*",
+        choices=("x", "y", "z"),
+        default=("z", "x", "y"),
+        help="axis order to test",
+    )
     args = parser.parse_args()
 
     controller = rhs.HiwonderBusServoController(
@@ -76,53 +150,50 @@ def main():
         SERVO_RETRIES,
     )
 
-    start_pulses = _read_arm_pulses(controller)
-    start_joints = _arm_joints_from_pulses(start_pulses)
-    start_pose = kinematics.fk_pose(start_joints)
-    requested_position = _apply_offset(start_pose["position"], args.dx, args.dy, args.dz)
+    start_pulses, start_joints, start_pose = _read_pose(controller)
+    preferred_orientation = start_pose["orientation"]
 
-    print("IK validation: current pulses", start_pulses, flush=True)
-    print("IK validation: current joints", start_joints, flush=True)
-    print("IK validation: current pose", start_pose, flush=True)
-    print("IK validation: requested position", requested_position, flush=True)
-    print("IK validation: requested orientation", start_pose["orientation"], flush=True)
-
-    result = kinematics.solve_ik(
-        requested_position,
-        start_pose["orientation"],
-        initial_joints=start_joints,
-        prefer_current=True,
-        allow_approx=args.allow_approx,
+    print("IK validation: start pulses", start_pulses, flush=True)
+    print("IK validation: start joints", start_joints, flush=True)
+    print("IK validation: start pose", start_pose, flush=True)
+    print(
+        "IK validation: using current orientation as a soft preference; "
+        "this 5-DOF arm cannot generally preserve full orientation exactly.",
+        flush=True,
     )
-    target_pulses = kinematics.arm_joints_to_pulses(result["joints"])
 
-    print("IK validation: solver result", result, flush=True)
-    print("IK validation: target pulses", target_pulses, flush=True)
-
-    if not args.execute:
-        return
+    current_joints = dict(start_joints)
 
     try:
-        controller.write_positions_ms(
-            int(round(max(args.move_time, 0.1) * 1000.0)),
-            {ARM_SERVO_ID_BY_NAME[name]: pulse for name, pulse in target_pulses.items()},
-        )
-        time.sleep(max(args.move_time, 0.1) + 0.5)
-
-        final_pulses = _read_arm_pulses(controller)
-        final_joints = _arm_joints_from_pulses(final_pulses)
-        final_pose = kinematics.fk_pose(final_joints)
-
-        print("IK validation: final pulses", final_pulses, flush=True)
-        print("IK validation: final joints", final_joints, flush=True)
-        print("IK validation: final pose", final_pose, flush=True)
+        for axis in args.axes:
+            print(f"IK validation: axis {axis} sequence with step={args.step} m", flush=True)
+            for label, delta in (
+                (f"{axis} +s", +args.step),
+                (f"{axis} -2s", -2.0 * args.step),
+                (f"{axis} +s return", +args.step),
+            ):
+                current_joints, _ = _run_step(
+                    controller,
+                    label,
+                    axis,
+                    delta,
+                    args.move_time,
+                    current_joints,
+                    preferred_orientation,
+                )
     finally:
         controller.write_positions_ms(
             int(round(max(args.move_time, 0.4) * 1000.0)),
             {ARM_SERVO_ID_BY_NAME[name]: pulse for name, pulse in start_pulses.items()},
         )
         time.sleep(max(args.move_time, 0.4) + 0.4)
-        print("IK validation: restored pulses", _read_arm_pulses(controller), flush=True)
+        restored = _read_arm_pulses(controller)
+        print("IK validation: restored pulses", restored, flush=True)
+        try:
+            restored_joints = _arm_joints_from_pulses(restored)
+            print("IK validation: restored pose", kinematics.fk_pose(restored_joints), flush=True)
+        except RuntimeError:
+            pass
 
 
 if __name__ == "__main__":

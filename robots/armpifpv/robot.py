@@ -591,6 +591,7 @@ class ArmPiFPVRobotProxy(RobotBase):
         lines.append("  Prefer small staged pose changes over large one-shot Cartesian jumps.")
         lines.append("  In practice, short-to-moderate timed moves often look better than long slow drags.")
         lines.append("  For multi-step tasks, prefer timed motion followed by `wait=True` or `robot.arm.wait_until_joints_near(...)` before the next action.")
+        lines.append("  Small Cartesian moves in X/Z are usually more reliable than lateral Y moves from a typical forward-facing posture.")
         lines.append("")
         lines.append("### Individual Joints")
         for name in ARM_JOINT_NAMES:
@@ -618,6 +619,8 @@ class ArmPiFPVRobotProxy(RobotBase):
         lines.append("- Use `robot.arm.get_pose()` or `snapshot('arm')` before planning a grasp.")
         lines.append("- For grasping, think in terms of target tool pose, but expect orientation approximation because the arm is 5-DOF.")
         lines.append("- For Cartesian moves, prefer small offsets and re-check `robot.arm.get_pose()` after each step instead of assuming the first move was exact.")
+        lines.append("- In practice, small X/Z Cartesian adjustments are usually more effective than Y adjustments from a cobra-like forward-facing pose.")
+        lines.append("- If a Y move is important, expect approximation and consider breaking it into several small steps with pose checks between them.")
         lines.append("- Prefer `robot.gripper.open()` / `robot.gripper.close()` over fine-grained openness targets unless you have calibrated this specific gripper.")
         lines.append("- Coordinated multi-joint moves usually look rougher than single-joint moves on this hardware.")
         lines.append("- If you need repeated closed-loop updates, keep the loop moderate. This is not a smooth high-bandwidth servo stack.")
