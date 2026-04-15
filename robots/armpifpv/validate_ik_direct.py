@@ -111,11 +111,8 @@ def _run_step(controller, label: str, axis: str, delta_m: float, move_time: floa
         f"{_position_delta(current_pose['position'], final_pose['position'])}",
         flush=True,
     )
-    print(
-        f"{label}: orientation drift rad "
-        f"{result['orientation_error_rad']:.4f}",
-        flush=True,
-    )
+    actual_orientation_error = kinematics._orientation_distance_rad(orientation_xyzw, final_pose["orientation"])
+    print(f"{label}: orientation drift rad {actual_orientation_error:.4f}", flush=True)
     return final_joints, final_pose
 
 

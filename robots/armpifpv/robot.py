@@ -441,6 +441,7 @@ class ArmPiFPVRobotProxy(RobotBase):
     def _stop_servos(self):
         command = rhs.HiwonderBusServoGroupCommand()
         command.should_write = False
+        command.positions = {SERVO_ID_BY_NAME[name]: 0 for name in ALL_ACTUATOR_NAMES}
         self._publish_command(command)
 
     def _state_snapshot(self):
