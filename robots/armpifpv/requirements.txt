@@ -5,6 +5,7 @@ roboflex.transport.zmq
 roboflex.transport.mqtt
 roboflex.webcam_gst
 roboflex.util.jpeg
+roboflex.realsense
 opencv-python
 Pillow
 matplotlib

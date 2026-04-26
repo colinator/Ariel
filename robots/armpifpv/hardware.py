@@ -35,6 +35,15 @@ from .config import (
     GRAPH_METRICS_TOPIC,
     GRIPPER_CLOSED_PULSE,
     GRIPPER_OPEN_PULSE,
+    MONITOR_ENABLE,
+    MONITOR_HZ,
+    MONITOR_MAX_AGE_S,
+    REALSENSE_ALIGN_TO_RGB,
+    REALSENSE_ENABLE,
+    REALSENSE_FPS,
+    REALSENSE_HEIGHT,
+    REALSENSE_SERIAL,
+    REALSENSE_WIDTH,
     SERVO_BAUD_RATE,
     SERVO_DEVICE_NAME,
     SERVO_DYNAMIC_READ_EVERY_N_LOOPS,
@@ -43,9 +52,39 @@ from .config import (
     SERVO_TELEMETRY_EVERY_N_LOOPS,
     SERVO_TIMEOUT_MS,
     ZMQ_CAMERA_BIND,
+    ZMQ_MONITOR_CAMERA_BIND,
+    ZMQ_MONITOR_REALSENSE_BIND,
+    ZMQ_REALSENSE_BIND,
     ZMQ_SERVO_CMD_CONNECT,
     ZMQ_SERVO_STATE_BIND,
 )
+
+
+def _message_timestamp(msg) -> float | None:
+    if msg is None:
+        return None
+    try:
+        return float(msg.timestamp)
+    except Exception:
+        return None
+
+
+class LatestSampler(rf.Node):
+    """On each input tick, signal the latest fresh message from a LastOne node."""
+
+    def __init__(self, last_node, *, max_age_s: float, name: str = "LatestSampler"):
+        super().__init__(name)
+        self._last_node = last_node
+        self._max_age_s = max_age_s
+
+    def receive(self, _tick_msg):
+        msg = self._last_node.last_message
+        if msg is None:
+            return
+        timestamp = _message_timestamp(msg)
+        if timestamp is not None and time.time() - timestamp > self._max_age_s:
+            return
+        self.signal(msg)
 
 
 class ArmPiFPVHardware:
@@ -57,9 +96,15 @@ class ArmPiFPVHardware:
         self._camera = None
         self._controller = None
         self._servo_node = None
+        self._realsense = None
         self._command_sub = None
         self._camera_pub = None
+        self._realsense_pub = None
         self._state_pub = None
+        self._monitor_clock = None
+        self._monitor_camera_pub = None
+        self._monitor_realsense_pub = None
+        self._monitor_nodes = []
         self._mqtt_ctx = None
         self._metrics_pub = None
 
@@ -92,6 +137,7 @@ class ArmPiFPVHardware:
     def start(self, *, enable_servo_graph: bool = True):
         self._zmq_ctx = rzmq.ZMQContext()
         self._graph = self._make_graph_root()
+        self._monitor_nodes = []
 
         self._camera = rcw.WebcamSensor(
             CAMERA_WIDTH,
@@ -112,8 +158,83 @@ class ArmPiFPVHardware:
         if CAMERA_USE_JPEG:
             jpeg = ruj.JPEGCompressor(image_key="rgb", output_key="jpeg", name="ArmPiJPEG", debug=False)
             self._graph > self._camera > jpeg > self._camera_pub
+            camera_monitor_source = jpeg
         else:
             self._graph > self._camera > self._camera_pub
+            camera_monitor_source = self._camera
+
+        self._monitor_clock = None
+        if MONITOR_ENABLE:
+            self._monitor_clock = rf.FrequencyGenerator(MONITOR_HZ, name="ArmPiMonitorClock")
+            self._monitor_nodes.append(self._monitor_clock)
+
+            camera_last = rf.LastOne("ArmPiMonitorCameraLast")
+            self._monitor_camera_pub = rzmq.ZMQPublisher(
+                self._zmq_ctx,
+                ZMQ_MONITOR_CAMERA_BIND,
+                name="ArmPiMonitorCamPub",
+                max_queued_msgs=1,
+            )
+            camera_sampler = LatestSampler(
+                camera_last,
+                max_age_s=MONITOR_MAX_AGE_S,
+                name="ArmPiMonitorCameraSampler",
+            )
+            camera_monitor_source > camera_last
+            self._graph > self._monitor_clock > camera_sampler > self._monitor_camera_pub
+            self._monitor_nodes.extend([camera_last, camera_sampler])
+
+        if REALSENSE_ENABLE:
+            try:
+                import roboflex.realsense as rfr
+            except ImportError as exc:
+                raise RuntimeError(
+                    "ARMPIFPV_REALSENSE_ENABLE is set, but roboflex.realsense is not importable"
+                ) from exc
+
+            camera_type = rfr.camera_type_or([rfr.CameraType.RGB, rfr.CameraType.DEPTH])
+            align_to = rfr.CameraAlignment.RGB if REALSENSE_ALIGN_TO_RGB else rfr.CameraAlignment.NONE
+            realsense_config = rfr.Config(
+                camera_type=camera_type,
+                align_to=align_to,
+                rgb_settings={"fps": REALSENSE_FPS, "width": REALSENSE_WIDTH, "height": REALSENSE_HEIGHT},
+                depth_settings={"fps": REALSENSE_FPS, "width": REALSENSE_WIDTH, "height": REALSENSE_HEIGHT},
+            )
+            if REALSENSE_SERIAL:
+                self._realsense = rfr.RealsenseSensor(
+                    REALSENSE_SERIAL,
+                    realsense_config,
+                    name="ArmPiRealSense",
+                )
+            else:
+                self._realsense = rfr.RealsenseSensor.get_one_sensor(
+                    realsense_config,
+                    name="ArmPiRealSense",
+                )
+            self._realsense_pub = rzmq.ZMQPublisher(
+                self._zmq_ctx,
+                ZMQ_REALSENSE_BIND,
+                name="ArmPiRealSensePub",
+                max_queued_msgs=1,
+            )
+            self._graph > self._realsense > self._realsense_pub
+
+            if MONITOR_ENABLE:
+                realsense_last = rf.LastOne("ArmPiMonitorRealSenseLast")
+                self._monitor_realsense_pub = rzmq.ZMQPublisher(
+                    self._zmq_ctx,
+                    ZMQ_MONITOR_REALSENSE_BIND,
+                    name="ArmPiMonitorRealSensePub",
+                    max_queued_msgs=1,
+                )
+                realsense_sampler = LatestSampler(
+                    realsense_last,
+                    max_age_s=MONITOR_MAX_AGE_S,
+                    name="ArmPiMonitorRealSenseSampler",
+                )
+                self._realsense > realsense_last
+                self._monitor_clock > realsense_sampler > self._monitor_realsense_pub
+                self._monitor_nodes.extend([realsense_last, realsense_sampler])
 
         controller = rhs.HiwonderBusServoController(
             SERVO_DEVICE_NAME,
@@ -161,6 +282,17 @@ class ArmPiFPVHardware:
         print("ArmPi-FPV hardware server running.", flush=True)
         print(f"  Camera: {CAMERA_WIDTH}x{CAMERA_HEIGHT}@{CAMERA_FPS}, device_index={CAMERA_DEVICE_INDEX}", flush=True)
         print(f"    Camera pub: {ZMQ_CAMERA_BIND}", flush=True)
+        if MONITOR_ENABLE:
+            print(f"    Camera monitor pub: {ZMQ_MONITOR_CAMERA_BIND} @ {MONITOR_HZ} Hz", flush=True)
+        if REALSENSE_ENABLE and self._realsense is not None:
+            print(
+                f"  RealSense: {REALSENSE_WIDTH}x{REALSENSE_HEIGHT}@{REALSENSE_FPS}, "
+                f"serial={self._realsense.serial_number}",
+                flush=True,
+            )
+            print(f"    RealSense pub: {ZMQ_REALSENSE_BIND}", flush=True)
+            if MONITOR_ENABLE:
+                print(f"    RealSense monitor pub: {ZMQ_MONITOR_REALSENSE_BIND} @ {MONITOR_HZ} Hz", flush=True)
         print(f"  Servo device: {SERVO_DEVICE_NAME} @ {SERVO_BAUD_RATE}", flush=True)
         if enable_servo_graph:
             print(f"    Servo state pub: {ZMQ_SERVO_STATE_BIND}", flush=True)

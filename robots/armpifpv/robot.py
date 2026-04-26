@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import io
-import threading
 import time
 
 import roboflex as rf
@@ -27,10 +26,12 @@ from .config import (
     GRIPPER_OPEN_PULSE,
     NAME_BY_SERVO_ID,
     PULSE_MAP_BY_NAME,
+    REALSENSE_ENABLE,
     SERVO_ID_BY_NAME,
     STATE_MAX_AGE_S,
     TOOL_FRAME,
     ZMQ_CAMERA_CONNECT,
+    ZMQ_REALSENSE_CONNECT,
     ZMQ_SERVO_CMD_BIND,
     ZMQ_SERVO_STATE_CONNECT,
 )
@@ -57,27 +58,25 @@ def _gripper_pulse_to_openness(pulse: float) -> float:
     return _clamp_gripper_openness((float(pulse) - GRIPPER_CLOSED_PULSE) / denom)
 
 
+def _message_time(msg) -> float | None:
+    if msg is None:
+        return None
+    try:
+        return float(msg.timestamp)
+    except Exception:
+        return None
+
+
 class CameraProxy:
     def __init__(self, zmq_ctx, endpoint: str):
-        self._latest_frame = None
-        self._last_recv = None
-        self._lock = threading.Lock()
-
         self._sub = rzmq.ZMQSubscriber(zmq_ctx, endpoint, name="ArmPiCamSub", max_queued_msgs=1)
+        self._last = rf.LastOne("ArmPiCamLast")
         if CAMERA_USE_JPEG:
             self._jpeg = ruj.JPEGDecompressor(input_key="jpeg", output_key="rgb", name="ArmPiJPEGDec", debug=False)
-            self._cb = rf.CallbackFun(self._on_frame, "ArmPiCamCB")
-            self._sub > self._jpeg > self._cb
+            self._sub > self._jpeg > self._last
         else:
             self._jpeg = None
-            self._cb = rf.CallbackFun(self._on_frame, "ArmPiCamCB")
-            self._sub > self._cb
-
-    def _on_frame(self, msg):
-        rgb = rcw.WebcamDataRGB(msg).rgb
-        with self._lock:
-            self._latest_frame = rgb
-            self._last_recv = time.time()
+            self._sub > self._last
 
     def start(self):
         self._sub.start()
@@ -85,18 +84,78 @@ class CameraProxy:
     def stop(self):
         self._sub.stop()
 
-    def grab_frame(self, timeout: float = 5.0):
+    def _latest_message(self, timeout: float):
         deadline = time.time() + timeout
         while time.time() < deadline:
-            with self._lock:
-                if self._latest_frame is not None:
-                    return self._latest_frame.copy()
+            msg = self._last.last_message
+            if msg is not None:
+                return msg
             time.sleep(0.01)
         raise TimeoutError(f"no frame received within {timeout}s")
 
+    def grab_frame(self, timeout: float = 5.0):
+        msg = self._latest_message(timeout)
+        return rcw.WebcamDataRGB(msg).rgb.copy()
+
     @property
     def last_recv(self):
-        return self._last_recv
+        return _message_time(self._last.last_message)
+
+
+class RealSenseProxy:
+    def __init__(self, zmq_ctx, endpoint: str):
+        try:
+            import roboflex.realsense as rfr
+        except ImportError as exc:
+            raise RuntimeError(
+                "RealSense is enabled, but roboflex.realsense is not importable"
+            ) from exc
+
+        self._rfr = rfr
+        self._sub = rzmq.ZMQSubscriber(zmq_ctx, endpoint, name="ArmPiRealSenseSub", max_queued_msgs=1)
+        self._last = rf.LastOne("ArmPiRealSenseLast")
+        self._sub > self._last
+
+    def start(self):
+        self._sub.start()
+
+    def stop(self):
+        self._sub.stop()
+
+    def _latest_message(self, timeout: float):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            msg = self._last.last_message
+            if msg is not None:
+                return msg
+            time.sleep(0.01)
+        raise TimeoutError(f"no RealSense frameset received within {timeout}s")
+
+    def grab_frameset(self, timeout: float = 5.0):
+        return self._rfr.RealsenseFrameset(self._latest_message(timeout))
+
+    def grab_frame(self, timeout: float = 5.0):
+        return self.grab_frameset(timeout).rgb.copy()
+
+    def grab_depth(self, timeout: float = 5.0):
+        return self.grab_frameset(timeout).depth.copy()
+
+    def grab_rgbd(self, timeout: float = 5.0) -> dict:
+        frameset = self.grab_frameset(timeout)
+        return {
+            "rgb": frameset.rgb.copy(),
+            "depth": frameset.depth.copy(),
+            "camera_k_rgb": frameset.camera_k_rgb.copy(),
+            "camera_k_depth": frameset.camera_k_depth.copy(),
+            "aligned_to": frameset.aligned_to,
+            "serial_number": frameset.serial_number,
+            "frame_number": frameset.frame_number,
+            "timestamp": frameset.timestamp,
+        }
+
+    @property
+    def last_recv(self):
+        return _message_time(self._last.last_message)
 
 
 class _ServoStateReceiver:
@@ -358,6 +417,7 @@ class ArmPiFPVRobotProxy(RobotBase):
         self.gripper = GripperProxy(self)
 
         self._camera_proxy = None
+        self._realsense_proxy = None
         self._state_receiver = None
         self._cmd_pub = None
 
@@ -368,6 +428,11 @@ class ArmPiFPVRobotProxy(RobotBase):
         self._camera_proxy = CameraProxy(self._zmq_ctx, ZMQ_CAMERA_CONNECT)
         self._camera_proxy.start()
         self.cameras["main"] = self._camera_proxy
+
+        if REALSENSE_ENABLE:
+            self._realsense_proxy = RealSenseProxy(self._zmq_ctx, ZMQ_REALSENSE_CONNECT)
+            self._realsense_proxy.start()
+            self.cameras["realsense"] = self._realsense_proxy
 
         self._cmd_pub = rzmq.ZMQPublisher(self._zmq_ctx, ZMQ_SERVO_CMD_BIND, name="ArmPiCmdPub", max_queued_msgs=1)
         self._state_receiver = _ServoStateReceiver(self._zmq_ctx, ZMQ_SERVO_STATE_CONNECT)
@@ -391,10 +456,13 @@ class ArmPiFPVRobotProxy(RobotBase):
 
         if self._camera_proxy is not None:
             self._camera_proxy.stop()
+        if self._realsense_proxy is not None:
+            self._realsense_proxy.stop()
         if self._state_receiver is not None:
             self._state_receiver.stop()
 
         self._camera_proxy = None
+        self._realsense_proxy = None
         self._state_receiver = None
         self._cmd_pub = None
         self.cameras = {}
@@ -468,9 +536,21 @@ class ArmPiFPVRobotProxy(RobotBase):
             self._camera_proxy.last_recv is not None and
             (now - self._camera_proxy.last_recv) < max_age
         )
+        realsense_alive = (
+            not REALSENSE_ENABLE or (
+                self._realsense_proxy is not None and
+                self._realsense_proxy.last_recv is not None and
+                (now - self._realsense_proxy.last_recv) < max_age
+            )
+        )
         _, _, last_state = self._state_snapshot()
         servo_alive = last_state is not None and (now - last_state) < max_age
-        return {"camera": camera_alive, "servos": servo_alive, "all": camera_alive and servo_alive}
+        return {
+            "camera": camera_alive,
+            "realsense": realsense_alive,
+            "servos": servo_alive,
+            "all": camera_alive and realsense_alive and servo_alive,
+        }
 
     def snapshot(self, device_name: str) -> dict:
         if device_name in self.cameras:
@@ -544,6 +624,14 @@ class ArmPiFPVRobotProxy(RobotBase):
         lines.append(f"  USB webcam, {CAMERA_WIDTH}x{CAMERA_HEIGHT} @ {CAMERA_FPS}fps, RGB frames")
         lines.append("  snapshot('main') -> returns a live JPEG image")
         lines.append("  robot.cameras['main'].grab_frame() -> numpy (H, W, 3) uint8, RGB")
+        if REALSENSE_ENABLE:
+            lines.append("")
+            lines.append("### Camera: 'realsense'")
+            lines.append("  Intel RealSense RGB-D frameset stream")
+            lines.append("  snapshot('realsense') -> returns the RealSense RGB image")
+            lines.append("  robot.cameras['realsense'].grab_frame() -> numpy RGB image")
+            lines.append("  robot.cameras['realsense'].grab_depth() -> numpy uint16 depth image")
+            lines.append("  robot.cameras['realsense'].grab_rgbd() -> dict with rgb, depth, K matrices, serial, frame number, timestamp")
         lines.append("")
 
         lines.append("### Arm")

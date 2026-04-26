@@ -6,6 +6,7 @@ It exposes:
 - a 5-DOF arm with semantic joint names
 - a 1-DOF parallel gripper
 - one USB camera
+- optional Intel RealSense RGB-D camera support
 - local FK/IK helpers
 - a Pi-side hardware server built on Roboflex
 - an Ariel proxy used by the REPL and MCP server
@@ -36,6 +37,10 @@ The target actuator path is the Hiwonder controller-board protocol on `/dev/rrc`
   - `6`: base_yaw
 - Arm joint APIs use radians.
 - Gripper openness is approximate and coarse. Treat it as open-ish / close-ish, not a calibrated jaw-width model.
+- RealSense support is opt-in with `ARMPIFPV_REALSENSE_ENABLE=1`.
+- Low-rate TCP camera monitor streams are enabled by default at 1 Hz:
+  - regular camera: `tcp://0.0.0.0:5560`
+  - RealSense frameset, when enabled: `tcp://0.0.0.0:5561`
 - Motion is visibly jerky on this robot, including with the vendor stack. This is mostly the hardware, not a sign that Ariel is necessarily doing something wrong.
 - In practice, small brisk staged moves work better than very slow creeping moves.
 - Cartesian control is approximate. Small `x/z` moves are usually more reliable than `y` moves from a typical forward-facing pose.
