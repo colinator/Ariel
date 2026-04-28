@@ -41,9 +41,11 @@ The target actuator path is the Hiwonder controller-board protocol on `/dev/rrc`
 - The regular camera local IPC feed is raw RGB by default; set `ARMPIFPV_CAMERA_USE_JPEG=1` only if IPC bandwidth matters more than CPU.
 - The low-rate TCP monitor camera feed is raw RGB by default on a wired link; set `ARMPIFPV_MONITOR_CAMERA_USE_JPEG=1` to compress only that monitor branch.
 - RealSense support is opt-in with `ARMPIFPV_REALSENSE_ENABLE=1`.
+- RealSense defaults to 15 FPS because 30 FPS costs too much CPU on the Raspberry Pi 5 for normal Ariel operation.
 - Low-rate TCP camera monitor streams are enabled by default at 1 Hz:
   - regular camera: `tcp://0.0.0.0:5560`
   - RealSense frameset, when enabled: `tcp://0.0.0.0:5561`
+- The regular camera stack may emit noisy GStreamer warnings such as `gst_value_set_int_range_step`; redirect stderr to keep the hardware log readable.
 - Motion is visibly jerky on this robot, including with the vendor stack. This is mostly the hardware, not a sign that Ariel is necessarily doing something wrong.
 - In practice, small brisk staged moves work better than very slow creeping moves.
 - Cartesian control is approximate. Small `x/z` moves are usually more reliable than `y` moves from a typical forward-facing pose.
@@ -130,9 +132,10 @@ In terminal 1:
 ```bash
 cd /home/pi/arieltesting/Ariel
 source robots/armpifpv/.pyvenv/bin/activate
-ARMPIFPV_CAMERA_DEVICE_INDEX=2 \
+GST_DEBUG=0 \
+G_MESSAGES_DEBUG= \
 ARMPIFPV_REALSENSE_ENABLE=1 \
-python -m robots.armpifpv.hardware
+python -m robots.armpifpv.hardware 2> /tmp/armpifpv-gst.err | tee /tmp/armpifpv-hardware.out
 ```
 
 Servo-only low-CPU mode:
@@ -218,9 +221,10 @@ Terminal 1:
 ```bash
 cd /home/pi/arieltesting/Ariel
 source robots/armpifpv/.pyvenv/bin/activate
-ARMPIFPV_CAMERA_DEVICE_INDEX=2 \
+GST_DEBUG=0 \
+G_MESSAGES_DEBUG= \
 ARMPIFPV_REALSENSE_ENABLE=1 \
-python -m robots.armpifpv.hardware
+python -m robots.armpifpv.hardware 2> /tmp/armpifpv-gst.err | tee /tmp/armpifpv-hardware.out
 ```
 
 Terminal 2:
