@@ -192,10 +192,10 @@ class ArmPiFPVHardware:
                         name="ArmPiMonitorJPEG",
                         debug=False,
                     )
-                    self._monitor_clock > camera_sampler > monitor_jpeg > self._monitor_camera_pub
+                    self._graph > self._monitor_clock > camera_sampler > monitor_jpeg > self._monitor_camera_pub
                     self._monitor_nodes.extend([camera_last, camera_sampler, monitor_jpeg])
                 else:
-                    self._monitor_clock > camera_sampler > self._monitor_camera_pub
+                    self._graph > self._monitor_clock > camera_sampler > self._monitor_camera_pub
                     self._monitor_nodes.extend([camera_last, camera_sampler])
 
         if REALSENSE_ENABLE:
@@ -288,6 +288,10 @@ class ArmPiFPVHardware:
             )
 
             self._graph > self._command_sub > self._servo_node > self._state_pub
+
+        print("ArmPi-FPV hardware graph:", flush=True)
+        print(self._graph.graph_to_string(), flush=True)
+
         if GRAPH_METRICS_BROKER:
             self._graph.profile()
         else:
