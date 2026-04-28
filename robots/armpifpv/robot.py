@@ -603,7 +603,10 @@ class ArmPiFPVRobotProxy(RobotBase):
         status = self.is_alive()
         lines = []
         lines.append("# Robot: ArmPi-FPV")
-        lines.append("Hiwonder ArmPi-FPV with a 5-DOF arm, 1-DOF parallel gripper, and one USB camera.")
+        camera_summary = "one USB camera"
+        if REALSENSE_ENABLE:
+            camera_summary += " plus an Intel RealSense RGB-D camera"
+        lines.append(f"Hiwonder ArmPi-FPV with a 5-DOF arm, 1-DOF parallel gripper, and {camera_summary}.")
         lines.append("")
 
         if status["all"]:
@@ -612,6 +615,8 @@ class ArmPiFPVRobotProxy(RobotBase):
             parts = []
             if not status["camera"]:
                 parts.append("camera: no data")
+            if REALSENSE_ENABLE and not status["realsense"]:
+                parts.append("realsense: no data")
             if not status["servos"]:
                 parts.append("servos: no data")
             lines.append(f"**Status: HARDWARE OFFLINE** ({', '.join(parts)})")
@@ -656,6 +661,10 @@ class ArmPiFPVRobotProxy(RobotBase):
         lines.append("")
         lines.append("### Camera")
         lines.append("  robot.cameras['main'].grab_frame(timeout=5.0) -> numpy RGB image")
+        if REALSENSE_ENABLE:
+            lines.append("  robot.cameras['realsense'].grab_frame(timeout=5.0) -> numpy RGB image")
+            lines.append("  robot.cameras['realsense'].grab_depth(timeout=5.0) -> numpy uint16 depth image")
+            lines.append("  robot.cameras['realsense'].grab_rgbd(timeout=5.0) -> {'rgb', 'depth', 'camera_k_rgb', 'camera_k_depth', ...}")
         lines.append("")
         lines.append("### Arm Joint Motion")
         lines.append("  robot.arm.get_joint_positions() -> {'base_yaw': ..., 'shoulder': ..., ...}")
@@ -696,16 +705,26 @@ class ArmPiFPVRobotProxy(RobotBase):
         lines.append("")
         lines.append("### Introspection")
         lines.append("  robot.describe() -> this text")
-        lines.append("  robot.snapshot('main' | 'arm' | 'gripper' | joint_name)")
-        lines.append("  robot.is_alive() -> {'camera': bool, 'servos': bool, 'all': bool}")
+        if REALSENSE_ENABLE:
+            lines.append("  robot.snapshot('main' | 'realsense' | 'arm' | 'gripper' | joint_name)")
+            lines.append("  robot.is_alive() -> {'camera': bool, 'realsense': bool, 'servos': bool, 'all': bool}")
+        else:
+            lines.append("  robot.snapshot('main' | 'arm' | 'gripper' | joint_name)")
+            lines.append("  robot.is_alive() -> {'camera': bool, 'servos': bool, 'all': bool}")
         lines.append("")
 
         lines.append("## Tips For LLM Control")
+        lines.append("- Use the LLM for planning, debugging, and writing local control code; do not route every camera frame through the LLM for manipulation.")
+        lines.append("- For visual feedback, write local Python loops in the REPL that sample `robot.cameras[...]`, compute a simple error, command a small move, and re-check.")
+        lines.append("- Prefer coarse observe-plan-move-observe loops over high-rate continuous servoing. This robot can use local feedback, but it is not a smooth high-bandwidth arm.")
         lines.append("- Prefer small staged moves. For a typical step of about 0.1 to 0.35 rad (6 to 20 deg), start with `move_time` around 0.3 to 0.5 seconds.")
         lines.append("- As a rough rule of thumb, effective joint motion around about 0.4 to 1.0 rad/s tends to look better than very slow creeping motion.")
         lines.append("- If a loop is needed, use repeated small quick corrections rather than one long slow tracking move.")
         lines.append("- For reliable multi-step behaviors, use `wait=True` or call the explicit wait helpers before the next step.")
         lines.append("- Use `robot.arm.get_pose()` or `snapshot('arm')` before planning a grasp.")
+        if REALSENSE_ENABLE:
+            lines.append("- Use `robot.cameras['realsense'].grab_rgbd()` for local RGB-D geometry. Depth values are raw uint16 values from the RealSense frameset.")
+            lines.append("- Use RealSense RGB-D locally to estimate object pixels, depth, and 3D points; return concise summaries or selected snapshots to the LLM.")
         lines.append("- For grasping, think in terms of target tool pose, but expect orientation approximation because the arm is 5-DOF.")
         lines.append("- For Cartesian moves, prefer small offsets and re-check `robot.arm.get_pose()` after each step instead of assuming the first move was exact.")
         lines.append("- In practice, small X/Z Cartesian adjustments are usually more effective than Y adjustments from a cobra-like forward-facing pose.")

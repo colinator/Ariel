@@ -127,11 +127,14 @@ In terminal 1:
 ```bash
 cd /home/pi/arieltesting/Ariel
 source .pyvenv/bin/activate
+ARMPIFPV_CAMERA_DEVICE_INDEX=2 \
+ARMPIFPV_REALSENSE_ENABLE=1 \
 python -m robots.armpifpv.hardware
 ```
 
 This process owns:
 - the camera
+- the RealSense, when `ARMPIFPV_REALSENSE_ENABLE=1`
 - `/dev/rrc`
 - the local Roboflex graph
 - the local ZMQ `ipc://...` endpoints
@@ -200,6 +203,8 @@ Terminal 1:
 ```bash
 cd /home/pi/arieltesting/Ariel
 source .pyvenv/bin/activate
+ARMPIFPV_CAMERA_DEVICE_INDEX=2 \
+ARMPIFPV_REALSENSE_ENABLE=1 \
 python -m robots.armpifpv.hardware
 ```
 
