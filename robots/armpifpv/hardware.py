@@ -37,6 +37,7 @@ from .config import (
     GRIPPER_CLOSED_PULSE,
     GRIPPER_OPEN_PULSE,
     MONITOR_ENABLE,
+    MONITOR_CAMERA_USE_JPEG,
     MONITOR_HZ,
     MONITOR_MAX_AGE_S,
     REALSENSE_ALIGN_TO_RGB,
@@ -161,10 +162,9 @@ class ArmPiFPVHardware:
             if CAMERA_USE_JPEG:
                 jpeg = ruj.JPEGCompressor(image_key="rgb", output_key="jpeg", name="ArmPiJPEG", debug=False)
                 self._graph > self._camera > jpeg > self._camera_pub
-                camera_monitor_source = jpeg
             else:
                 self._graph > self._camera > self._camera_pub
-                camera_monitor_source = self._camera
+            camera_monitor_source = self._camera
 
         self._monitor_clock = None
         if MONITOR_ENABLE and (CAMERA_ENABLE or REALSENSE_ENABLE):
@@ -185,8 +185,18 @@ class ArmPiFPVHardware:
                     name="ArmPiMonitorCameraSampler",
                 )
                 camera_monitor_source > camera_last
-                self._graph > self._monitor_clock > camera_sampler > self._monitor_camera_pub
-                self._monitor_nodes.extend([camera_last, camera_sampler])
+                if MONITOR_CAMERA_USE_JPEG:
+                    monitor_jpeg = ruj.JPEGCompressor(
+                        image_key="rgb",
+                        output_key="jpeg",
+                        name="ArmPiMonitorJPEG",
+                        debug=False,
+                    )
+                    self._monitor_clock > camera_sampler > monitor_jpeg > self._monitor_camera_pub
+                    self._monitor_nodes.extend([camera_last, camera_sampler, monitor_jpeg])
+                else:
+                    self._monitor_clock > camera_sampler > self._monitor_camera_pub
+                    self._monitor_nodes.extend([camera_last, camera_sampler])
 
         if REALSENSE_ENABLE:
             try:
