@@ -204,12 +204,12 @@ class ArmPiFPVHardware:
                 self._realsense = rfr.RealsenseSensor(
                     REALSENSE_SERIAL,
                     realsense_config,
-                    name="ArmPiRealSense",
+                    "ArmPiRealSense",
                 )
             else:
                 self._realsense = rfr.RealsenseSensor.get_one_sensor(
                     realsense_config,
-                    name="ArmPiRealSense",
+                    "ArmPiRealSense",
                 )
             self._realsense_pub = rzmq.ZMQPublisher(
                 self._zmq_ctx,
