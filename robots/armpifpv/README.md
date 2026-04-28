@@ -37,6 +37,7 @@ The target actuator path is the Hiwonder controller-board protocol on `/dev/rrc`
   - `6`: base_yaw
 - Arm joint APIs use radians.
 - Gripper openness is approximate and coarse. Treat it as open-ish / close-ish, not a calibrated jaw-width model.
+- The regular camera can be disabled with `ARMPIFPV_CAMERA_ENABLE=0`.
 - RealSense support is opt-in with `ARMPIFPV_REALSENSE_ENABLE=1`.
 - Low-rate TCP camera monitor streams are enabled by default at 1 Hz:
   - regular camera: `tcp://0.0.0.0:5560`
@@ -117,7 +118,7 @@ Example:
 
 ```bash
 cd /home/pi/arieltesting/Ariel
-source .pyvenv/bin/activate
+source robots/armpifpv/.pyvenv/bin/activate
 ```
 
 ### 4. Start the hardware process
@@ -126,9 +127,20 @@ In terminal 1:
 
 ```bash
 cd /home/pi/arieltesting/Ariel
-source .pyvenv/bin/activate
+source robots/armpifpv/.pyvenv/bin/activate
 ARMPIFPV_CAMERA_DEVICE_INDEX=2 \
 ARMPIFPV_REALSENSE_ENABLE=1 \
+python -m robots.armpifpv.hardware
+```
+
+Servo-only low-CPU mode:
+
+```bash
+cd /home/pi/arieltesting/Ariel
+source robots/armpifpv/.pyvenv/bin/activate
+ARMPIFPV_CAMERA_ENABLE=0 \
+ARMPIFPV_REALSENSE_ENABLE=0 \
+ARMPIFPV_MONITOR_ENABLE=0 \
 python -m robots.armpifpv.hardware
 ```
 
@@ -145,7 +157,7 @@ In terminal 2, if you want to test the raw Ariel REPL without MCP:
 
 ```bash
 cd /home/pi/arieltesting/Ariel
-source .pyvenv/bin/activate
+source robots/armpifpv/.pyvenv/bin/activate
 python -m server.repl_server --robot-conf robot.conf
 ```
 
@@ -157,8 +169,9 @@ In terminal 2 for normal use, or terminal 3 if you also started the raw REPL man
 
 ```bash
 cd /home/pi/arieltesting/Ariel
-source .pyvenv/bin/activate
+source robots/armpifpv/.pyvenv/bin/activate
 export ARIEL_IMAGE_RETURN_MODE=inline
+export ARMPIFPV_REALSENSE_ENABLE=1
 python -m server.mcp_server
 ```
 
@@ -202,7 +215,7 @@ Terminal 1:
 
 ```bash
 cd /home/pi/arieltesting/Ariel
-source .pyvenv/bin/activate
+source robots/armpifpv/.pyvenv/bin/activate
 ARMPIFPV_CAMERA_DEVICE_INDEX=2 \
 ARMPIFPV_REALSENSE_ENABLE=1 \
 python -m robots.armpifpv.hardware
@@ -212,8 +225,9 @@ Terminal 2:
 
 ```bash
 cd /home/pi/arieltesting/Ariel
-source .pyvenv/bin/activate
+source robots/armpifpv/.pyvenv/bin/activate
 export ARIEL_IMAGE_RETURN_MODE=inline
+export ARMPIFPV_REALSENSE_ENABLE=1
 python -m server.mcp_server
 ```
 

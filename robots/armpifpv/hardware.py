@@ -23,6 +23,7 @@ from . import kinematics
 from .config import (
     ALL_SERVO_IDS,
     CAMERA_DEVICE_INDEX,
+    CAMERA_ENABLE,
     CAMERA_FPS,
     CAMERA_HEIGHT,
     CAMERA_USE_JPEG,
@@ -139,50 +140,53 @@ class ArmPiFPVHardware:
         self._graph = self._make_graph_root()
         self._monitor_nodes = []
 
-        self._camera = rcw.WebcamSensor(
-            CAMERA_WIDTH,
-            CAMERA_HEIGHT,
-            CAMERA_FPS,
-            device_index=CAMERA_DEVICE_INDEX,
-            emit_rgb=True,
-            name="ArmPiCamera",
-        )
+        camera_monitor_source = None
+        if CAMERA_ENABLE:
+            self._camera = rcw.WebcamSensor(
+                CAMERA_WIDTH,
+                CAMERA_HEIGHT,
+                CAMERA_FPS,
+                device_index=CAMERA_DEVICE_INDEX,
+                emit_rgb=True,
+                name="ArmPiCamera",
+            )
 
-        self._camera_pub = rzmq.ZMQPublisher(
-            self._zmq_ctx,
-            ZMQ_CAMERA_BIND,
-            name="ArmPiCamPub",
-            max_queued_msgs=1,
-        )
+            self._camera_pub = rzmq.ZMQPublisher(
+                self._zmq_ctx,
+                ZMQ_CAMERA_BIND,
+                name="ArmPiCamPub",
+                max_queued_msgs=1,
+            )
 
-        if CAMERA_USE_JPEG:
-            jpeg = ruj.JPEGCompressor(image_key="rgb", output_key="jpeg", name="ArmPiJPEG", debug=False)
-            self._graph > self._camera > jpeg > self._camera_pub
-            camera_monitor_source = jpeg
-        else:
-            self._graph > self._camera > self._camera_pub
-            camera_monitor_source = self._camera
+            if CAMERA_USE_JPEG:
+                jpeg = ruj.JPEGCompressor(image_key="rgb", output_key="jpeg", name="ArmPiJPEG", debug=False)
+                self._graph > self._camera > jpeg > self._camera_pub
+                camera_monitor_source = jpeg
+            else:
+                self._graph > self._camera > self._camera_pub
+                camera_monitor_source = self._camera
 
         self._monitor_clock = None
-        if MONITOR_ENABLE:
+        if MONITOR_ENABLE and (CAMERA_ENABLE or REALSENSE_ENABLE):
             self._monitor_clock = rf.FrequencyGenerator(MONITOR_HZ, name="ArmPiMonitorClock")
             self._monitor_nodes.append(self._monitor_clock)
 
-            camera_last = rf.LastOne("ArmPiMonitorCameraLast")
-            self._monitor_camera_pub = rzmq.ZMQPublisher(
-                self._zmq_ctx,
-                ZMQ_MONITOR_CAMERA_BIND,
-                name="ArmPiMonitorCamPub",
-                max_queued_msgs=1,
-            )
-            camera_sampler = LatestSampler(
-                camera_last,
-                max_age_s=MONITOR_MAX_AGE_S,
-                name="ArmPiMonitorCameraSampler",
-            )
-            camera_monitor_source > camera_last
-            self._graph > self._monitor_clock > camera_sampler > self._monitor_camera_pub
-            self._monitor_nodes.extend([camera_last, camera_sampler])
+            if camera_monitor_source is not None:
+                camera_last = rf.LastOne("ArmPiMonitorCameraLast")
+                self._monitor_camera_pub = rzmq.ZMQPublisher(
+                    self._zmq_ctx,
+                    ZMQ_MONITOR_CAMERA_BIND,
+                    name="ArmPiMonitorCamPub",
+                    max_queued_msgs=1,
+                )
+                camera_sampler = LatestSampler(
+                    camera_last,
+                    max_age_s=MONITOR_MAX_AGE_S,
+                    name="ArmPiMonitorCameraSampler",
+                )
+                camera_monitor_source > camera_last
+                self._graph > self._monitor_clock > camera_sampler > self._monitor_camera_pub
+                self._monitor_nodes.extend([camera_last, camera_sampler])
 
         if REALSENSE_ENABLE:
             try:
@@ -280,9 +284,12 @@ class ArmPiFPVHardware:
             self._graph.start_all()
 
         print("ArmPi-FPV hardware server running.", flush=True)
-        print(f"  Camera: {CAMERA_WIDTH}x{CAMERA_HEIGHT}@{CAMERA_FPS}, device_index={CAMERA_DEVICE_INDEX}", flush=True)
-        print(f"    Camera pub: {ZMQ_CAMERA_BIND}", flush=True)
-        if MONITOR_ENABLE:
+        if CAMERA_ENABLE:
+            print(f"  Camera: {CAMERA_WIDTH}x{CAMERA_HEIGHT}@{CAMERA_FPS}, device_index={CAMERA_DEVICE_INDEX}", flush=True)
+            print(f"    Camera pub: {ZMQ_CAMERA_BIND}", flush=True)
+        else:
+            print("  Camera: disabled (ARMPIFPV_CAMERA_ENABLE=0)", flush=True)
+        if MONITOR_ENABLE and CAMERA_ENABLE:
             print(f"    Camera monitor pub: {ZMQ_MONITOR_CAMERA_BIND} @ {MONITOR_HZ} Hz", flush=True)
         if REALSENSE_ENABLE and self._realsense is not None:
             print(

@@ -18,6 +18,7 @@ from . import kinematics
 from .config import (
     ALL_ACTUATOR_NAMES,
     ARM_JOINT_NAMES,
+    CAMERA_ENABLE,
     CAMERA_FPS,
     CAMERA_HEIGHT,
     CAMERA_USE_JPEG,
@@ -426,9 +427,10 @@ class ArmPiFPVRobotProxy(RobotBase):
         if self._connected:
             return
 
-        self._camera_proxy = CameraProxy(self._zmq_ctx, ZMQ_CAMERA_CONNECT)
-        self._camera_proxy.start()
-        self.cameras["main"] = self._camera_proxy
+        if CAMERA_ENABLE:
+            self._camera_proxy = CameraProxy(self._zmq_ctx, ZMQ_CAMERA_CONNECT)
+            self._camera_proxy.start()
+            self.cameras["main"] = self._camera_proxy
 
         if REALSENSE_ENABLE:
             self._realsense_proxy = RealSenseProxy(self._zmq_ctx, ZMQ_REALSENSE_CONNECT)
@@ -533,9 +535,11 @@ class ArmPiFPVRobotProxy(RobotBase):
     def is_alive(self, max_age: float = STATE_MAX_AGE_S) -> dict:
         now = time.time()
         camera_alive = (
-            self._camera_proxy is not None and
-            self._camera_proxy.last_recv is not None and
-            (now - self._camera_proxy.last_recv) < max_age
+            not CAMERA_ENABLE or (
+                self._camera_proxy is not None and
+                self._camera_proxy.last_recv is not None and
+                (now - self._camera_proxy.last_recv) < max_age
+            )
         )
         realsense_alive = (
             not REALSENSE_ENABLE or (
@@ -604,9 +608,14 @@ class ArmPiFPVRobotProxy(RobotBase):
         status = self.is_alive()
         lines = []
         lines.append("# Robot: ArmPi-FPV")
-        camera_summary = "one USB camera"
+        camera_summary = "no enabled cameras"
+        if CAMERA_ENABLE:
+            camera_summary = "one USB camera"
         if REALSENSE_ENABLE:
-            camera_summary += " plus an Intel RealSense RGB-D camera"
+            if CAMERA_ENABLE:
+                camera_summary += " plus an Intel RealSense RGB-D camera"
+            else:
+                camera_summary = "an Intel RealSense RGB-D camera"
         lines.append(f"Hiwonder ArmPi-FPV with a 5-DOF arm, 1-DOF parallel gripper, and {camera_summary}.")
         lines.append("")
 
@@ -614,7 +623,7 @@ class ArmPiFPVRobotProxy(RobotBase):
             lines.append("**Status: CONNECTED** (camera and servos active)")
         else:
             parts = []
-            if not status["camera"]:
+            if CAMERA_ENABLE and not status["camera"]:
                 parts.append("camera: no data")
             if REALSENSE_ENABLE and not status["realsense"]:
                 parts.append("realsense: no data")
@@ -626,10 +635,11 @@ class ArmPiFPVRobotProxy(RobotBase):
 
         lines.append("## Devices")
         lines.append("")
-        lines.append("### Camera: 'main'")
-        lines.append(f"  USB webcam, {CAMERA_WIDTH}x{CAMERA_HEIGHT} @ {CAMERA_FPS}fps, RGB frames")
-        lines.append("  snapshot('main') -> returns a live JPEG image")
-        lines.append("  robot.cameras['main'].grab_frame() -> numpy (H, W, 3) uint8, RGB")
+        if CAMERA_ENABLE:
+            lines.append("### Camera: 'main'")
+            lines.append(f"  USB webcam, {CAMERA_WIDTH}x{CAMERA_HEIGHT} @ {CAMERA_FPS}fps, RGB frames")
+            lines.append("  snapshot('main') -> returns a live JPEG image")
+            lines.append("  robot.cameras['main'].grab_frame() -> numpy (H, W, 3) uint8, RGB")
         if REALSENSE_ENABLE:
             lines.append("")
             lines.append("### Camera: 'realsense'")
@@ -661,11 +671,14 @@ class ArmPiFPVRobotProxy(RobotBase):
         lines.append("## robot API Reference")
         lines.append("")
         lines.append("### Camera")
-        lines.append("  robot.cameras['main'].grab_frame(timeout=5.0) -> numpy RGB image")
+        if CAMERA_ENABLE:
+            lines.append("  robot.cameras['main'].grab_frame(timeout=5.0) -> numpy RGB image")
         if REALSENSE_ENABLE:
             lines.append("  robot.cameras['realsense'].grab_frame(timeout=5.0) -> numpy RGB image")
             lines.append("  robot.cameras['realsense'].grab_depth(timeout=5.0) -> numpy uint16 depth image")
             lines.append("  robot.cameras['realsense'].grab_rgbd(timeout=5.0) -> {'rgb', 'depth', 'camera_k_rgb', 'camera_k_depth', ...}")
+        if not CAMERA_ENABLE and not REALSENSE_ENABLE:
+            lines.append("  No cameras are enabled in this REPL process.")
         lines.append("")
         lines.append("### Arm Joint Motion")
         lines.append("  robot.arm.get_joint_positions() -> {'base_yaw': ..., 'shoulder': ..., ...}")
