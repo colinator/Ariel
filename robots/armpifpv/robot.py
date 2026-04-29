@@ -324,7 +324,15 @@ class ArmProxy:
         wait: bool = False,
         tolerance_rad: float = 0.10,
     ) -> dict[str, float]:
-        joint_dict = kinematics.coerce_joint_dict(joints)
+        if isinstance(joints, dict):
+            joint_dict = self.get_joint_positions()
+            for name, value in joints.items():
+                if name not in ARM_JOINT_NAMES:
+                    raise ValueError(f"unknown arm joint '{name}', available: {ARM_JOINT_NAMES}")
+                joint_dict[name] = float(value)
+            joint_dict = kinematics.coerce_joint_dict(joint_dict)
+        else:
+            joint_dict = kinematics.coerce_joint_dict(joints)
         self._robot._send_arm_joints(joint_dict, move_time=move_time)
         if wait:
             return self.wait_until_joints_near(joint_dict, timeout=move_time + 2.0, tolerance_rad=tolerance_rad)
@@ -683,7 +691,9 @@ class ArmPiFPVRobotProxy(RobotBase):
         lines.append("### Arm Joint Motion")
         lines.append("  robot.arm.get_joint_positions() -> {'base_yaw': ..., 'shoulder': ..., ...}")
         lines.append("  robot.arm.set_joint_positions(base_yaw=..., shoulder=..., move_time=1.0, wait=False)")
-        lines.append("  robot.arm.move_joints({'base_yaw': ..., 'shoulder': ..., ...}, move_time=1.0, wait=False)")
+        lines.append("  robot.arm.move_joints({'base_yaw': ..., 'shoulder': ...}, move_time=1.0, wait=False)")
+        lines.append("    Dict inputs may be partial; omitted joints hold their current measured positions.")
+        lines.append("    List/tuple inputs must still include all arm joints in semantic order.")
         lines.append("  robot.arm.wait_until_joints_near(target_joints, timeout=3.0, tolerance_rad=0.10)")
         lines.append("  robot.arm.home(move_time=1.0, wait=False)")
         lines.append("  robot.arm.stop()")
