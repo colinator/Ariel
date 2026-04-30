@@ -573,7 +573,7 @@ class ArmPiFPVHardware:
             if save_frame_path:
                 from PIL import Image
 
-                frame = robot.cameras["main"].grab_frame(timeout=5.0)
+                frame = robot.cameras["wrist"].grab_frame(timeout=5.0)
                 Image.fromarray(frame).save(save_frame_path)
                 print(f"Self-test: saved frame to {save_frame_path}", flush=True)
 

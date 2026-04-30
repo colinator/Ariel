@@ -438,7 +438,7 @@ class ArmPiFPVRobotProxy(RobotBase):
         if CAMERA_ENABLE:
             self._camera_proxy = CameraProxy(self._zmq_ctx, ZMQ_CAMERA_CONNECT)
             self._camera_proxy.start()
-            self.cameras["main"] = self._camera_proxy
+            self.cameras["wrist"] = self._camera_proxy
 
         if REALSENSE_ENABLE:
             self._realsense_proxy = RealSenseProxy(self._zmq_ctx, ZMQ_REALSENSE_CONNECT)
@@ -644,10 +644,11 @@ class ArmPiFPVRobotProxy(RobotBase):
         lines.append("## Devices")
         lines.append("")
         if CAMERA_ENABLE:
-            lines.append("### Camera: 'main'")
+            lines.append("### Camera: 'wrist'")
             lines.append(f"  USB webcam, {CAMERA_WIDTH}x{CAMERA_HEIGHT} @ {CAMERA_FPS}fps, RGB frames")
-            lines.append("  snapshot('main') -> returns a live JPEG image")
-            lines.append("  robot.cameras['main'].grab_frame() -> numpy (H, W, 3) uint8, RGB")
+            lines.append("  Physical location: mounted on the arm wrist, just behind and above the gripper")
+            lines.append("  snapshot('wrist') -> returns a live JPEG image")
+            lines.append("  robot.cameras['wrist'].grab_frame() -> numpy (H, W, 3) uint8, RGB")
         if REALSENSE_ENABLE:
             lines.append("")
             lines.append("### Camera: 'realsense'")
@@ -680,7 +681,7 @@ class ArmPiFPVRobotProxy(RobotBase):
         lines.append("")
         lines.append("### Camera")
         if CAMERA_ENABLE:
-            lines.append("  robot.cameras['main'].grab_frame(timeout=5.0) -> numpy RGB image")
+            lines.append("  robot.cameras['wrist'].grab_frame(timeout=5.0) -> numpy RGB image")
         if REALSENSE_ENABLE:
             lines.append("  robot.cameras['realsense'].grab_frame(timeout=5.0) -> numpy RGB image")
             lines.append("  robot.cameras['realsense'].grab_depth(timeout=5.0) -> numpy uint16 depth image")
@@ -730,10 +731,10 @@ class ArmPiFPVRobotProxy(RobotBase):
         lines.append("### Introspection")
         lines.append("  robot.describe() -> this text")
         if REALSENSE_ENABLE:
-            lines.append("  robot.snapshot('main' | 'realsense' | 'arm' | 'gripper' | joint_name)")
+            lines.append("  robot.snapshot('wrist' | 'realsense' | 'arm' | 'gripper' | joint_name)")
             lines.append("  robot.is_alive() -> {'camera': bool, 'realsense': bool, 'servos': bool, 'all': bool}")
         else:
-            lines.append("  robot.snapshot('main' | 'arm' | 'gripper' | joint_name)")
+            lines.append("  robot.snapshot('wrist' | 'arm' | 'gripper' | joint_name)")
             lines.append("  robot.is_alive() -> {'camera': bool, 'servos': bool, 'all': bool}")
         lines.append("")
 

@@ -37,6 +37,7 @@ The target actuator path is the Hiwonder controller-board protocol on `/dev/rrc`
   - `6`: base_yaw
 - Arm joint APIs use radians.
 - Gripper openness is approximate and coarse. Treat it as open-ish / close-ish, not a calibrated jaw-width model.
+- The regular camera is named `wrist`; it is mounted on the arm wrist, just behind and above the gripper.
 - The regular camera can be disabled with `ARMPIFPV_CAMERA_ENABLE=0`.
 - The regular camera local IPC feed is raw RGB by default; set `ARMPIFPV_CAMERA_USE_JPEG=1` only if IPC bandwidth matters more than CPU.
 - The low-rate TCP monitor camera feed is raw RGB by default on a wired link; set `ARMPIFPV_MONITOR_CAMERA_USE_JPEG=1` to compress only that monitor branch.
