@@ -222,11 +222,12 @@ def fk_matrix(joints: dict[str, float] | Iterable[float] | None = None) -> np.nd
     # Match the vendor transform.py MDH chain for the 5 arm joints. The URDF
     # places joint5 and grasping_frame as local-Z offsets from link4/link5, so
     # the practical end-effector reach is modeled along the final tool Z axis.
+    wrist_pitch_mdh = -math.pi / 2.0 - q["wrist_pitch"]
     T = _translate([0.0, 0.0, BASE_HEIGHT_M])
     T = T @ _mdh(0.0, 0.0, q["base_yaw"], 0.0)
     T = T @ _mdh(-math.pi / 2.0, 0.0, q["shoulder"], 0.0)
     T = T @ _mdh(0.0, LINK1_M, q["elbow"], 0.0)
-    T = T @ _mdh(0.0, LINK2_M, q["wrist_pitch"], 0.0)
+    T = T @ _mdh(0.0, LINK2_M, wrist_pitch_mdh, 0.0)
     T = T @ _mdh(-math.pi / 2.0, 0.0, q["wrist_roll"], 0.0)
     T = T @ _translate([0.0, 0.0, LINK3_M + TOOL_LINK_M])
     return T
