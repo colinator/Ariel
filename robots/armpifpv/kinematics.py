@@ -219,16 +219,16 @@ def coerce_joint_dict(joints: dict[str, float] | Iterable[float] | None) -> dict
 
 def fk_matrix(joints: dict[str, float] | Iterable[float] | None = None) -> np.ndarray:
     q = coerce_joint_dict(joints)
-    # Match the vendor transform.py structure: a Modified DH chain for the 5 arm
-    # joints, plus an explicit final tool reach. The vendor comments indicate the
-    # practical end-effector reach is modeled as link3 + tool_link.
+    # Match the vendor transform.py MDH chain for the 5 arm joints. The URDF
+    # places joint5 and grasping_frame as local-Z offsets from link4/link5, so
+    # the practical end-effector reach is modeled along the final tool Z axis.
     T = _translate([0.0, 0.0, BASE_HEIGHT_M])
     T = T @ _mdh(0.0, 0.0, q["base_yaw"], 0.0)
     T = T @ _mdh(-math.pi / 2.0, 0.0, q["shoulder"], 0.0)
     T = T @ _mdh(0.0, LINK1_M, q["elbow"], 0.0)
     T = T @ _mdh(0.0, LINK2_M, q["wrist_pitch"], 0.0)
     T = T @ _mdh(-math.pi / 2.0, 0.0, q["wrist_roll"], 0.0)
-    T = T @ _translate([LINK3_M + TOOL_LINK_M, 0.0, 0.0])
+    T = T @ _translate([0.0, 0.0, LINK3_M + TOOL_LINK_M])
     return T
 
 
