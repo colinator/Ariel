@@ -59,7 +59,7 @@ VALID_IMAGE_RETURN_MODES = {
 # images when a tool has an output schema.  Set ARIEL_STRUCTURED_OUTPUT=false
 # to disable output schemas on image-returning tools as a workaround.
 # See: https://github.com/anthropics/claude-code/issues/31208
-STRUCTURED_OUTPUT = os.getenv("ARIEL_STRUCTURED_OUTPUT", "true").strip().lower() not in ("0", "false", "no")
+STRUCTURED_OUTPUT = os.getenv("ARIEL_STRUCTURED_OUTPUT", "false").strip().lower() not in ("0", "false", "no")
 
 if IMAGE_RETURN_MODE not in VALID_IMAGE_RETURN_MODES:
     raise RuntimeError(
