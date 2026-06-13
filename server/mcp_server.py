@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """MCP server for Ariel.
 
-Exposes robot hardware to LLMs via eight tools:
+Exposes robot hardware to LLMs via nine tools:
   - health()                  — server + REPL health check (roundtrip ping)
   - describe()                — discover available devices
   - execute(code)             — run Python in a persistent REPL with `robot` object
@@ -10,6 +10,7 @@ Exposes robot hardware to LLMs via eight tools:
   - save_module(name, code)   — save a Python module for import in the REPL
   - list_modules()            — list all saved modules
   - read_module(name)         — read a module's source code
+  - read_log(lines)           — tail the REPL log, lock-free (works while REPL is busy)
 
 Requires hardware_server.py running in a separate terminal.
 
@@ -43,6 +44,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 ROBOT_CONF = REPO_ROOT / "robot.conf"
 IMAGE_CACHE_DIR = REPO_ROOT / "image_cache"
 IMAGE_RETURN_MODE = os.getenv("ARIEL_IMAGE_RETURN_MODE", "file").strip().lower()
+# On-device REPL log path (must match repl_server.py's default). Read lock-free by
+# the read_log tool so it works even while the REPL lock is held by a long call.
+REPL_LOG_PATH = Path(os.getenv("ARIEL_REPL_LOG", "/tmp/ariel_repl.log"))
 SERVER_ROOT = Path(os.getenv("ARIEL_SERVER_ROOT", str(REPO_ROOT))).resolve()
 CLIENT_ROOT_RAW = os.getenv("ARIEL_CLIENT_ROOT")
 CLIENT_ROOT = Path(CLIENT_ROOT_RAW).expanduser().resolve() if CLIENT_ROOT_RAW else None
@@ -330,7 +334,7 @@ def _build_server_instructions() -> str:
     return f"""\
 You are connected to a physical robot via Ariel, an MCP-based REPL for robot control.
 
-You have eight tools:
+You have nine tools:
 
 1. **describe** — Returns a full description of the robot's hardware, the `robot` API,
 available libraries, and usage tips.
@@ -358,6 +362,13 @@ Use this to extract reusable functions from your REPL experiments.
 8. **read_module** — Read a module's full source code. Use this before modifying
 an existing module so you can see what's already there.
 
+9. **read_log** — Read the tail of the REPL session log WITHOUT taking the REPL lock.
+This is the ONLY tool that works while the REPL is busy or wedged. Use it to recover
+the output of an `execute` that exceeded the ~30s timeout (the call keeps running and
+its output still lands in the log), or to see what the REPL last did during a hang.
+The log records COMPLETED calls (buffered, not streamed), so it is not a live progress
+feed — for live progress, have a background task write to a global you poll.
+
 Operating principles:
 - You are the PROGRAMMER, not the low-latency controller. Write code, run it, observe, iterate.
 - Establish session state before assuming prior context. Use `health` to learn whether the REPL is fresh or stale.
@@ -367,6 +378,7 @@ Operating principles:
 - Keep data on-device. Analyze with numpy/scipy, return summaries and plots via `robot.show(fig)` rather than pulling large arrays over MCP.
 - Move motors smoothly. Prefer interpolation over large instantaneous position jumps, using `robot.run()` or a short stepped loop when appropriate.
 - For long-running behaviors, manage background tasks explicitly. Use `robot.list_tasks()` or `robot.task_status()` when behavior is not as expected.
+- A single `execute` is capped at ~30s; longer calls time out while the REPL keeps running (its output then only reaches the log). For anything longer, launch a background task and poll a global with short `execute` calls — and use `read_log` to recover output or watch the REPL when a call hangs.
 - The REPL runs in a separate process. If your code crashes, the hardware is fine. Fix the code and re-run.
 - If the REPL crashes and restarts, you will see a warning in stderr:
   "[REPL restarted — all previous state (variables, imports, functions) has been lost]".
@@ -952,6 +964,48 @@ async def read_module(name: str) -> str:
 
     text = filepath.read_text()
     return f"# {safe_name}.py ({len(text.splitlines())} lines)\n\n{text}"
+
+
+@mcp_app.tool(
+    name="read_log",
+    description=(
+        "Read the tail of the REPL session log WITHOUT acquiring the REPL lock. "
+        f"Returns the last `lines` lines of the on-device log at {REPL_LOG_PATH} "
+        "(the stdout/result/stderr of past execute calls, prefixed 'out:' / '=>' / 'ERR:').\n\n"
+        "This is the ONE tool that works while the REPL is busy or wedged — every other "
+        "tool (execute, snapshot, shell, health) goes through the single REPL lock and "
+        "blocks behind a long-running call. Use read_log to:\n"
+        "  - recover the output of an execute() that exceeded the ~30s timeout (the work "
+        "keeps running and its output still lands in the log), and\n"
+        "  - inspect what the REPL last did when a call hangs.\n\n"
+        "Note: the log is written when each execute COMPLETES (buffered, not streamed), "
+        "so it shows finished calls, NOT live progress of an in-flight call. For live "
+        "progress, have a background task write to a global you poll.\n\n"
+        "Parameters:\n"
+        "- lines: number of trailing log lines to return (default 100)."
+    ),
+    **({"structured_output": False} if not STRUCTURED_OUTPUT else {}),
+)
+async def read_log(lines: int = 100) -> str:
+    path = REPL_LOG_PATH
+    if not path.exists():
+        return f"(no REPL log at {path})"
+    try:
+        # Lock-free tail: read only the trailing bytes, never touch the REPL.
+        max_bytes = 65536
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - max_bytes))
+            chunk = f.read().decode("utf-8", "replace")
+        rows = chunk.splitlines()
+        if size > max_bytes and rows:
+            rows = rows[1:]  # drop a possibly-partial first line
+        n = lines if (lines and lines > 0) else len(rows)
+        tail = rows[-n:]
+        return f"# {path} — last {len(tail)} of {len(rows)} recent lines\n" + "\n".join(tail)
+    except Exception as exc:
+        return f"Error reading log: {exc!r}"
 
 
 # --- Entry point ---
