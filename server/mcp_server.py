@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """MCP server for Ariel.
 
-Exposes robot hardware to LLMs via nine tools:
+Exposes robot hardware to LLMs via ten tools:
   - health()                  — server + REPL health check (roundtrip ping)
   - describe()                — discover available devices
   - execute(code)             — run Python in a persistent REPL with `robot` object
@@ -11,6 +11,7 @@ Exposes robot hardware to LLMs via nine tools:
   - list_modules()            — list all saved modules
   - read_module(name)         — read a module's source code
   - read_log(lines)           — tail the REPL log, lock-free (works while REPL is busy)
+  - interrupt()               — SIGINT the REPL to abort a running execute (lock-free)
 
 Requires hardware_server.py running in a separate terminal.
 
@@ -23,6 +24,7 @@ Then connect an MCP client to http://127.0.0.1:8750/mcp (streamable HTTP).
 import atexit
 import ast
 import base64
+import signal
 import json
 import keyword
 import os
@@ -96,7 +98,8 @@ class ReplConnection:
         self._ready = False
         self._lock = asyncio.Lock()
         self._startup_timeout_s = 15.0
-        self._exec_timeout_s = 30.0
+        self._exec_timeout_s = float(os.getenv("ARIEL_EXEC_TIMEOUT_S", "120"))
+        self._busy = False  # True while an exec is in flight; lock-free read for interrupt
         self._just_restarted = False  # set on auto-respawn, cleared after warning
 
     def _start(self):
@@ -231,7 +234,11 @@ class ReplConnection:
                     self._write_message(msg)
                     return self._read_message(timeout=self._exec_timeout_s)
 
-                response = await asyncio.get_event_loop().run_in_executor(None, _exchange)
+                self._busy = True
+                try:
+                    response = await asyncio.get_event_loop().run_in_executor(None, _exchange)
+                finally:
+                    self._busy = False
 
                 if response is None:
                     # REPL died during execution
@@ -334,7 +341,7 @@ def _build_server_instructions() -> str:
     return f"""\
 You are connected to a physical robot via Ariel, an MCP-based REPL for robot control.
 
-You have nine tools:
+You have ten tools:
 
 1. **describe** — Returns a full description of the robot's hardware, the `robot` API,
 available libraries, and usage tips.
@@ -363,11 +370,19 @@ Use this to extract reusable functions from your REPL experiments.
 an existing module so you can see what's already there.
 
 9. **read_log** — Read the tail of the REPL session log WITHOUT taking the REPL lock.
-This is the ONLY tool that works while the REPL is busy or wedged. Use it to recover
-the output of an `execute` that exceeded the ~30s timeout (the call keeps running and
-its output still lands in the log), or to see what the REPL last did during a hang.
-The log records COMPLETED calls (buffered, not streamed), so it is not a live progress
-feed — for live progress, have a background task write to a global you poll.
+One of two tools (with `interrupt`) that work while the REPL is busy or wedged. Use it
+to recover the output of an `execute` that exceeded the configured exec timeout (the
+call keeps running and its output still lands in the log), or to see what the REPL last
+did during a hang. The log records COMPLETED calls (buffered, not streamed), so it is
+not a live progress feed — for live progress, have a background task write to a global
+you poll.
+
+10. **interrupt** — Lock-free Ctrl-C: SIGINT the REPL to abort a running `execute`.
+Fires only when an exec is in flight; the interrupted code raises KeyboardInterrupt and
+is caught gracefully, so REPL state (variables, imports, modules) survives — no restart.
+May not unstick a hung C-extension call (restart for those); stops the arm where it
+froze, so re-home afterward. Emergency brake — prefer a background task's stop event for
+graceful stops.
 
 Operating principles:
 - You are the PROGRAMMER, not the low-latency controller. Write code, run it, observe, iterate.
@@ -378,7 +393,7 @@ Operating principles:
 - Keep data on-device. Analyze with numpy/scipy, return summaries and plots via `robot.show(fig)` rather than pulling large arrays over MCP.
 - Move motors smoothly. Prefer interpolation over large instantaneous position jumps, using `robot.run()` or a short stepped loop when appropriate.
 - For long-running behaviors, manage background tasks explicitly. Use `robot.list_tasks()` or `robot.task_status()` when behavior is not as expected.
-- A single `execute` is capped at ~30s; longer calls time out while the REPL keeps running (its output then only reaches the log). For anything longer, launch a background task and poll a global with short `execute` calls — and use `read_log` to recover output or watch the REPL when a call hangs.
+- A single `execute` is capped at the configured exec timeout (default 120s, `ARIEL_EXEC_TIMEOUT_S`); longer calls time out while the REPL keeps running (its output then only reaches the log). For anything longer, launch a background task and poll a global with short `execute` calls — use `read_log` to recover output or watch the REPL, and `interrupt` to abort a runaway.
 - The REPL runs in a separate process. If your code crashes, the hardware is fine. Fix the code and re-run.
 - If the REPL crashes and restarts, you will see a warning in stderr:
   "[REPL restarted — all previous state (variables, imports, functions) has been lost]".
@@ -972,10 +987,10 @@ async def read_module(name: str) -> str:
         "Read the tail of the REPL session log WITHOUT acquiring the REPL lock. "
         f"Returns the last `lines` lines of the on-device log at {REPL_LOG_PATH} "
         "(the stdout/result/stderr of past execute calls, prefixed 'out:' / '=>' / 'ERR:').\n\n"
-        "This is the ONE tool that works while the REPL is busy or wedged — every other "
-        "tool (execute, snapshot, shell, health) goes through the single REPL lock and "
-        "blocks behind a long-running call. Use read_log to:\n"
-        "  - recover the output of an execute() that exceeded the ~30s timeout (the work "
+        "One of two lock-free tools (with interrupt) that work while the REPL is busy or "
+        "wedged — every other tool (execute, snapshot, shell, health) goes through the "
+        "single REPL lock and blocks behind a long-running call. Use read_log to:\n"
+        "  - recover the output of an execute() that exceeded the configured exec timeout (the work "
         "keeps running and its output still lands in the log), and\n"
         "  - inspect what the REPL last did when a call hangs.\n\n"
         "Note: the log is written when each execute COMPLETES (buffered, not streamed), "
@@ -1006,6 +1021,36 @@ async def read_log(lines: int = 100) -> str:
         return f"# {path} — last {len(tail)} of {len(rows)} recent lines\n" + "\n".join(tail)
     except Exception as exc:
         return f"Error reading log: {exc!r}"
+
+
+@mcp_app.tool(
+    name="interrupt",
+    description=(
+        "Send a Ctrl-C (SIGINT) to the REPL to abort a running execute() — lock-free, "
+        "so it works while the REPL is busy. Fires only if an exec is actually in "
+        "flight (otherwise a no-op, so an idle REPL is never disturbed). The interrupted "
+        "code raises KeyboardInterrupt and is caught gracefully: the REPL and all its "
+        "state (variables, imports, modules) survive — you get an error response, not a "
+        "restart.\n\n"
+        "Caveats: aborts pure-Python loops cleanly, but may NOT unstick a hung "
+        "C-extension call (e.g. a wedged camera grab) — restart the REPL for those. If "
+        "the arm was mid-move it stops where it froze, so command a safe pose afterward. "
+        "The graceful way to stop a long job is a background task's stop event; this is "
+        "the emergency brake."
+    ),
+    **({"structured_output": False} if not STRUCTURED_OUTPUT else {}),
+)
+async def interrupt() -> str:
+    if not repl._is_alive():
+        return "REPL is not running; nothing to interrupt."
+    if not getattr(repl, "_busy", False):
+        return "REPL is idle (no exec in flight); nothing to interrupt."
+    try:
+        repl._proc.send_signal(signal.SIGINT)
+        return ("Sent SIGINT. The running execute() should abort with KeyboardInterrupt; "
+                "REPL state is preserved. If it stays wedged (hung C call), restart the REPL.")
+    except Exception as exc:
+        return f"Failed to interrupt: {exc!r}"
 
 
 # --- Entry point ---

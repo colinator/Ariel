@@ -202,6 +202,8 @@ def execute_code(code, globals_dict):
                 exec(compile(setup_code, '<repl>', 'exec'), globals_dict)
             if expr_code:
                 result = eval(compile(expr_code, '<repl>', 'eval'), globals_dict)
+    except KeyboardInterrupt:
+        stderr_buf.write("KeyboardInterrupt: execution aborted (interrupt tool). REPL state preserved.\n")
     except Exception:
         stderr_buf.write(traceback.format_exc())
 
