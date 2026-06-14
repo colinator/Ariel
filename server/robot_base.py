@@ -39,6 +39,18 @@ class RobotBase(ABC):
         self._pending_images: list[str] = []
         self._tasks: dict[str, _TaskInfo] = {}
 
+    # ── Observation plane (lock-free reads, optional) ────────────────
+    @classmethod
+    def observation_devices(cls, zmq_ctx):
+        """Read-only observation taps for the lock-free observation plane.
+
+        Override to return a list of (name, kind, proxy) where each proxy is a
+        subscriber-only tap with start()/stop()/observe() — no command/actuator
+        side. This lets a second consumer (the MCP server) read cameras/state
+        without going through the single REPL lock. Default: none.
+        """
+        return []
+
     # ── Abstract: subclasses must implement ──────────────────────────
 
     @abstractmethod

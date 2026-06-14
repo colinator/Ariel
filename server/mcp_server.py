@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """MCP server for Ariel.
 
-Exposes robot hardware to LLMs via ten tools:
+Exposes robot hardware to LLMs via eleven tools:
   - health()                  — server + REPL health check (roundtrip ping)
   - describe()                — discover available devices
   - execute(code)             — run Python in a persistent REPL with `robot` object
-  - snapshot(device)          — grab latest state from any named device
+  - snapshot(device)          — grab latest frame/state (lock-free observation plane)
   - shell(command)            — run shell commands (pip install, git clone, etc.)
   - save_module(name, code)   — save a Python module for import in the REPL
   - list_modules()            — list all saved modules
   - read_module(name)         — read a module's source code
   - read_log(lines)           — tail the REPL log, lock-free (works while REPL is busy)
   - interrupt()               — SIGINT the REPL to abort a running execute (lock-free)
+  - peek()                    — lock-free status: exec-in-flight, joint state, cam freshness
 
 Requires hardware_server.py running in a separate terminal.
 
@@ -298,6 +299,50 @@ class ReplConnection:
 # --- MCP Server ---
 
 repl = ReplConnection()
+
+
+class ObservationClient:
+    """Lock-free, read-only tap into the robot's sensor/state streams.
+
+    Builds the robot's ``observation_devices()`` in the MCP-server process (its own
+    ZMQ context + subscriber graphs), independent of the REPL and its lock. Fully
+    optional: if init fails it stays empty and snapshot/peek degrade gracefully.
+    """
+
+    def __init__(self):
+        self.devices = {}      # name -> proxy (start/stop/observe)
+        self.kinds = {}        # name -> kind str
+        self._ctx = None
+        self.error = None
+
+    def start(self):
+        try:
+            import roboflex.transport.zmq as rzmq
+            from server.robot_loader import load_robot_class
+            cls = load_robot_class(str(ROBOT_CONF))
+            self._ctx = rzmq.ZMQContext()
+            for name, kind, proxy in cls.observation_devices(self._ctx):
+                proxy.start()
+                self.devices[name] = proxy
+                self.kinds[name] = kind
+            print(f"Observation client started: {list(self.devices)}")
+        except Exception as exc:
+            self.error = f"{type(exc).__name__}: {exc}"
+            print(f"WARNING: observation client init failed: {self.error}")
+
+    def observe(self, name, **kw):
+        proxy = self.devices.get(name)
+        return proxy.observe(**kw) if proxy is not None else None
+
+    def stop(self):
+        for p in self.devices.values():
+            try:
+                p.stop()
+            except Exception:
+                pass
+
+
+observation = ObservationClient()
 atexit.register(repl.stop)
 
 
@@ -341,7 +386,7 @@ def _build_server_instructions() -> str:
     return f"""\
 You are connected to a physical robot via Ariel, an MCP-based REPL for robot control.
 
-You have ten tools:
+You have eleven tools:
 
 1. **describe** — Returns a full description of the robot's hardware, the `robot` API,
 available libraries, and usage tips.
@@ -384,6 +429,11 @@ May not unstick a hung C-extension call (restart for those); stops the arm where
 froze, so re-home afterward. Emergency brake — prefer a background task's stop event for
 graceful stops.
 
+11. **peek** — Lock-free status: is an `execute` in flight + REPL pid, the latest joint/
+servo state, and how fresh each camera stream is. Reads the observation plane (a second
+subscriber tap, independent of the REPL lock), so it works mid-move / while busy. Use it
+to watch a long op, or to read joint angles without disturbing a running call.
+
 Operating principles:
 - You are the PROGRAMMER, not the low-latency controller. Write code, run it, observe, iterate.
 - Establish session state before assuming prior context. Use `health` to learn whether the REPL is fresh or stale.
@@ -394,6 +444,7 @@ Operating principles:
 - Move motors smoothly. Prefer interpolation over large instantaneous position jumps, using `robot.run()` or a short stepped loop when appropriate.
 - For long-running behaviors, manage background tasks explicitly. Use `robot.list_tasks()` or `robot.task_status()` when behavior is not as expected.
 - A single `execute` is capped at the configured exec timeout (default 120s, `ARIEL_EXEC_TIMEOUT_S`); longer calls time out while the REPL keeps running (its output then only reaches the log). For anything longer, launch a background task and poll a global with short `execute` calls — use `read_log` to recover output or watch the REPL, and `interrupt` to abort a runaway.
+- Reads are lock-free: `snapshot` and `peek` tap the sensor/state streams directly (a second subscriber, independent of the REPL lock), so you can observe camera frames and joint angles even while the REPL is busy moving. So to watch a long motion: kick it off (background task), then `peek`/`snapshot` to see progress.
 - The REPL runs in a separate process. If your code crashes, the hardware is fine. Fix the code and re-run.
 - If the REPL crashes and restarts, you will see a warning in stderr:
   "[REPL restarted — all previous state (variables, imports, functions) has been lost]".
@@ -671,16 +722,38 @@ async def execute(code: str) -> list[types.TextContent | types.ImageContent]:
 @mcp_app.tool(
     name="snapshot",
     description=(
-        "Grab the latest state from a named device — a quick peek without writing code. "
-        "For cameras: returns a live image according to the configured image return mode. "
-        "For motors: returns current position, limits, and other state. "
-        "Device names are listed in the describe output."
+        "Grab the latest frame/state from a named device — a quick peek without writing "
+        "code. Served lock-free from the observation plane (a direct subscriber tap) when "
+        "the device is in the robot's observation manifest, so it works even while the "
+        "REPL is busy; otherwise it falls back to the REPL. For cameras: returns a live, "
+        "downscaled JPEG (tagged '[lock-free]' with frame age). For state: latest joint/"
+        "servo values. Device names are listed in the describe output."
     ),
     **({"structured_output": False} if not STRUCTURED_OUTPUT else {}),
 )
 async def snapshot(device: str) -> list[types.TextContent | types.ImageContent]:
     if not device:
         return [types.TextContent(type="text", text="Error: no device name provided")]
+
+    # Lock-free path: read directly from the observation client (no REPL lock).
+    if device in observation.devices:
+        payload = None
+        try:
+            payload = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: observation.observe(device))
+        except Exception as exc:
+            print(f"observation snapshot('{device}') failed, falling back to REPL: {exc!r}")
+        if payload is not None:
+            blocks: list[types.TextContent | types.ImageContent] = []
+            if payload.get("type") == "image" and payload.get("data"):
+                _emit_image_blocks(blocks, img_b64=payload["data"],
+                                   prefix=f"snapshot_{device}", mime="image/jpeg")
+            ts = payload.get("timestamp")
+            age = f"  ({time.time() - ts:.2f}s old)" if ts else ""
+            blocks.append(types.TextContent(
+                type="text",
+                text=(payload.get("summary") or f"snapshot from '{device}'") + age + "  [lock-free]"))
+            return blocks
 
     snapshot_code = f"""
 _dev = {device!r}
@@ -1053,6 +1126,43 @@ async def interrupt() -> str:
         return f"Failed to interrupt: {exc!r}"
 
 
+@mcp_app.tool(
+    name="peek",
+    description=(
+        "Lock-free status peek — works while the REPL is busy or wedged (does NOT take "
+        "the REPL lock). Reports whether an execute is in flight + the REPL pid, the "
+        "latest joint/servo state, and how fresh each camera stream is. State and cameras "
+        "come from the observation plane (a second subscriber tap, independent of the "
+        "REPL), so you can see joint angles and frame freshness even mid-move. For a full "
+        "frame use snapshot; to recover a busy call's output use read_log."
+    ),
+    **({"structured_output": False} if not STRUCTURED_OUTPUT else {}),
+)
+async def peek() -> str:
+    lines = []
+    alive = repl._is_alive()
+    pid = repl._proc.pid if (alive and repl._proc is not None) else None
+    lines.append(f"REPL: {'alive' if alive else 'down'}  pid={pid}  "
+                 f"exec_in_flight={getattr(repl, '_busy', False)}")
+    try:
+        sp = observation.observe("servo_state") if "servo_state" in observation.devices else None
+    except Exception as exc:
+        sp = None
+        lines.append(f"state: read error {exc!r}")
+    if sp:
+        ts = sp.get("timestamp")
+        age = f"{time.time() - ts:.2f}s old" if ts else "n/a"
+        lines.append(f"state: {sp.get('summary')}  ({age})")
+    elif observation.error:
+        lines.append(f"state: observation client unavailable ({observation.error})")
+    for name, kind in observation.kinds.items():
+        if kind == "camera":
+            lr = getattr(observation.devices[name], "last_recv", None)
+            fresh = f"{time.time() - lr:.2f}s old" if lr else "no frame yet"
+            lines.append(f"camera '{name}': {fresh}")
+    return "\n".join(lines)
+
+
 # --- Entry point ---
 
 if __name__ == "__main__":
@@ -1062,6 +1172,7 @@ if __name__ == "__main__":
             repl._start()
         except Exception as exc:
             print(f"WARNING: initial REPL start failed: {exc}")
+        observation.start()
 
     threading.Thread(target=_boot_repl, daemon=True).start()
     mcp_app.run(transport="streamable-http")

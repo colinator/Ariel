@@ -69,6 +69,19 @@ def _message_time(msg) -> float | None:
         return None
 
 
+def _encode_jpeg(rgb, max_side: int = 640, quality: int = 70):
+    """RGB array -> (base64 jpeg str, (w, h)), downscaled to max_side on the long edge."""
+    import cv2
+    h, w = rgb.shape[:2]
+    if max(h, w) > max_side:
+        s = max_side / float(max(h, w))
+        rgb = cv2.resize(rgb, (max(1, int(w * s)), max(1, int(h * s))))
+        h, w = rgb.shape[:2]
+    _ok, enc = cv2.imencode(".jpg", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR),
+                            [cv2.IMWRITE_JPEG_QUALITY, int(quality)])
+    return base64.b64encode(enc.tobytes()).decode("ascii"), (w, h)
+
+
 class CameraProxy:
     def __init__(self, zmq_ctx, endpoint: str):
         self._sub = rzmq.ZMQSubscriber(zmq_ctx, endpoint, name="ArmPiCamSub", max_queued_msgs=1)
@@ -98,6 +111,13 @@ class CameraProxy:
     def grab_frame(self, timeout: float = 5.0):
         msg = self._latest_message(timeout)
         return rcw.WebcamDataRGB(msg).rgb.copy()
+
+    def observe(self, timeout: float = 2.0, max_side: int = 640, quality: int = 70) -> dict:
+        """Normalized snapshot payload (latest frame, downscaled JPEG). Lock-free."""
+        rgb = self.grab_frame(timeout)
+        data, (w, h) = _encode_jpeg(rgb, max_side, quality)
+        return {"type": "image", "format": "jpeg", "data": data,
+                "summary": f"wrist camera {w}x{h}", "timestamp": self.last_recv}
 
     @property
     def last_recv(self):
@@ -141,6 +161,13 @@ class RealSenseProxy:
 
     def grab_depth(self, timeout: float = 5.0):
         return self.grab_frameset(timeout).depth.copy()
+
+    def observe(self, timeout: float = 2.0, max_side: int = 640, quality: int = 70) -> dict:
+        """Normalized snapshot payload (latest RGB, downscaled JPEG). Lock-free."""
+        rgb = self.grab_frame(timeout)
+        data, (w, h) = _encode_jpeg(rgb, max_side, quality)
+        return {"type": "image", "format": "jpeg", "data": data,
+                "summary": f"realsense rgb {w}x{h}", "timestamp": self.last_recv}
 
     def grab_rgbd(self, timeout: float = 5.0) -> dict:
         frameset = self.grab_frameset(timeout)
@@ -202,6 +229,14 @@ class _ServoStateReceiver:
     def snapshot(self):
         with self._lock:
             return dict(self._latest_state), dict(self._latest_joint_state), self._last_recv
+
+    def observe(self, **_kw) -> dict:
+        """Normalized snapshot payload of the latest servo/joint state. Lock-free."""
+        state, joints, recv = self.snapshot()
+        summary = ("joints(rad): " + ", ".join(f"{k}={v:.3f}" for k, v in joints.items())
+                   if joints else "no joint state received yet")
+        return {"type": "state", "state": {"joints_rad": joints, "servos": state},
+                "summary": summary, "timestamp": recv}
 
 
 class JointProxy:
@@ -430,6 +465,23 @@ class ArmPiFPVRobotProxy(RobotBase):
         self._realsense_proxy = None
         self._state_receiver = None
         self._cmd_pub = None
+
+    @classmethod
+    def observation_devices(cls, zmq_ctx):
+        """Read-only observation taps (subscribers only — no command publisher).
+
+        Built independently of connect() so a second consumer (the MCP server's
+        lock-free observation client) can subscribe to the same endpoints without
+        binding anything. Returns a list of (name, kind, proxy); each proxy has
+        start()/stop()/observe().
+        """
+        devs = []
+        if CAMERA_ENABLE:
+            devs.append(("wrist", "camera", CameraProxy(zmq_ctx, ZMQ_CAMERA_CONNECT)))
+        if REALSENSE_ENABLE:
+            devs.append(("realsense", "camera", RealSenseProxy(zmq_ctx, ZMQ_REALSENSE_CONNECT)))
+        devs.append(("servo_state", "state", _ServoStateReceiver(zmq_ctx, ZMQ_SERVO_STATE_CONNECT)))
+        return devs
 
     def connect(self) -> None:
         if self._connected:
