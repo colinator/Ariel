@@ -1,4 +1,5 @@
 {
+  "_NOTE": "This localhost:8750 entry is for the pan-tilt robot's Mac+Docker deployment (robots/pantilt, docker-compose.yml). The current ArmPi-FPV arm instead runs on a Raspberry Pi via systemd (robots/armpifpv/systemd/) and is connected separately — so this file does not point at the live arm.",
   "mcpServers": {
     "ariel": {
       "type": "http",

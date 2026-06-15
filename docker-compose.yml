@@ -1,3 +1,10 @@
+# ============================================================================
+# Pan-tilt robot deployment — Mac + Docker (robots/pantilt). This ran locally in
+# a container; the `hardware` profile runs robots.pantilt.hardware.
+# NOTE: this is NOT the ArmPi-FPV arm. That robot runs on a Raspberry Pi via
+# systemd (robots/armpifpv/systemd/: ariel-armpifpv-hardware.service +
+# ariel-mcp.service), so this compose's env applies to pan-tilt, not the Pi arm.
+# ============================================================================
 services:
   mcp:
     build:

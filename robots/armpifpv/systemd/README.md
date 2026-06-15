@@ -67,6 +67,17 @@ ARMPIFPV_REALSENSE_ENABLE=0 robots/armpifpv/systemd/install.sh
 ARIEL_IMAGE_RETURN_MODE=file robots/armpifpv/systemd/install.sh
 ```
 
+(`ARIEL_SYSTEMD_USER`, `ARMPIFPV_REALSENSE_ENABLE`, `ARIEL_IMAGE_RETURN_MODE` are read by
+`install.sh` and baked into the generated units.)
+
+The MCP server also reads these **runtime** env vars (good code defaults shown — override
+only via the unit or `systemctl edit ariel-mcp.service`):
+
+- `ARIEL_STRUCTURED_OUTPUT=false` — **keep false.** Setting it true re-triggers a FastMCP
+  bug that floods returned images' base64 into the text channel (truncating output).
+- `ARIEL_EXEC_TIMEOUT_S=120` — per-`execute` timeout (seconds). For long ops use a
+  background task, not a longer blocking call.
+
 ## Start, Stop, Status
 
 ```bash
